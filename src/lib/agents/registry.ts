@@ -1,0 +1,118 @@
+/**
+ * Agent registry — the 10 agents in the UTEONT pipeline.
+ *
+ * `implemented` indicates whether a runner currently exists (either as a
+ * Vercel serverless function or as a job picked up by the worker).
+ *
+ * `runtime` tells the frontend where this agent runs:
+ *   - "fn"     → Vercel serverless function (fast, stateless)
+ *   - "worker" → browser worker (long-running, Playwright + AI Studio)
+ */
+
+export type AgentRuntime = "fn" | "worker";
+
+export interface AgentSpec {
+  key: string;
+  name: string;
+  sidebarLabel: string;
+  description: string;
+  runtime: AgentRuntime;
+  implemented: boolean;
+}
+
+export const AGENTS: AgentSpec[] = [
+  {
+    key: "research",
+    name: "Research Agent",
+    sidebarLabel: "1. Research",
+    description:
+      "Discovers keyword opportunities using free signals (Google Trends, Wikipedia, optional Reddit). Outputs a ranked keyword list consumed by Idea Generation.",
+    runtime: "worker",
+    implemented: true,
+  },
+  {
+    key: "idea-generation",
+    name: "Idea Generation Agent",
+    sidebarLabel: "2. Idea Generation",
+    description:
+      "Converts keyword clusters into article angles + briefs via Gemini 3.1 Pro (thinking_level=low). Output gates at Idea Selection.",
+    runtime: "worker",
+    implemented: false,
+  },
+  {
+    key: "content-writing",
+    name: "Content Writing Agent",
+    sidebarLabel: "3. Content Writing",
+    description:
+      "Drafts full articles from approved briefs via Gemini 3.1 Pro (thinking_level=medium). Output: markdown drafts.",
+    runtime: "worker",
+    implemented: false,
+  },
+  {
+    key: "qa",
+    name: "QA / Validation Agent",
+    sidebarLabel: "4. QA / Validation",
+    description:
+      "Deterministic pre-review checks on article markdown: readability (Flesch), passive voice, policy / forbidden phrases, target keyword presence.",
+    runtime: "fn",
+    implemented: true,
+  },
+  {
+    key: "seo-optimization",
+    name: "SEO Optimization Agent",
+    sidebarLabel: "5. SEO Optimization",
+    description:
+      "Deterministic SEO lint of an article: title, heading hierarchy, word count, keyword density. Generates suggested meta description and JSON-LD Article schema.",
+    runtime: "fn",
+    implemented: true,
+  },
+  {
+    key: "technical-seo",
+    name: "Technical SEO Agent",
+    sidebarLabel: "6. Technical SEO",
+    description:
+      "Handles sitemap, robots.txt, canonical, hreflang, Core Web Vitals. Site-wide changes gate at Major Changes approval.",
+    runtime: "fn",
+    implemented: false,
+  },
+  {
+    key: "publishing",
+    name: "Publishing Agent",
+    sidebarLabel: "7. Publishing",
+    description:
+      "Pushes content to staging only. Production publish requires explicit human approval at Production gate.",
+    runtime: "fn",
+    implemented: false,
+  },
+  {
+    key: "backlink",
+    name: "Backlink / Outreach Agent",
+    sidebarLabel: "8. Backlink / Outreach",
+    description:
+      "Discovers prospects, drafts personalized outreach via Gemini 3.1 Pro (thinking_level=low). All sends require human approval.",
+    runtime: "worker",
+    implemented: false,
+  },
+  {
+    key: "performance-tracking",
+    name: "Performance Tracking Agent",
+    sidebarLabel: "9. Performance Tracking",
+    description:
+      "Pulls Google Search Console + GA4 + rank data on a daily cron. Read-only feedback loop into Research Agent.",
+    runtime: "fn",
+    implemented: false,
+  },
+  {
+    key: "revenue",
+    name: "Revenue Optimization Agent",
+    sidebarLabel: "10. Revenue Optimization",
+    description:
+      "Suggests CTA / affiliate / internal-link tweaks based on performance data. Routed through Major Changes gate.",
+    runtime: "fn",
+    implemented: false,
+  },
+];
+
+export function findAgent(key: string): AgentSpec | undefined {
+  return AGENTS.find((a) => a.key === key);
+}

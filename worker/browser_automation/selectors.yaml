@@ -1,0 +1,29 @@
+# AI Studio DOM selectors used by ai_studio_controller.py.
+#
+# WARNING: these are best-effort placeholders. AI Studio's UI changes
+# frequently and class names churn. Verify each selector on first run
+# using Playwright Inspector:
+#
+#     PWDEBUG=1 python browser_automation/ai_studio_controller.py --test
+#
+# Prefer semantic selectors (role, aria-label, text content) over CSS
+# class names — class names break on every UI deploy.
+#
+# When repairing: change ONLY this file. Do not hardcode selectors
+# in the .py module.
+
+# Run-settings panel
+model_dropdown: 'button[aria-label*="Model"]'
+model_option: 'div[role="option"]:has-text("{model}")'
+
+thinking_dropdown: 'button[aria-label*="Thinking"]'
+thinking_option: 'div[role="option"]:has-text("{level}")'
+
+temperature_input: 'input[aria-label*="Temperature"]'
+top_p_input: 'input[aria-label*="Top P"]'
+max_tokens_input: 'input[aria-label*="Max output tokens"]'
+
+# Prompt + response
+prompt_input: 'textarea[aria-label*="prompt"], div[contenteditable="true"][aria-label*="prompt"]'
+run_button: 'button[aria-label="Run"]:not([disabled]), button:has-text("Run"):not([disabled])'
+response_text: 'ms-chat-turn[data-turn-role="Model"], [data-test-id="response"]'

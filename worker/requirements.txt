@@ -1,0 +1,15 @@
+# Combined worker dependencies.
+
+# Browser automation
+playwright==1.48.0
+PyYAML==6.0.2
+
+# Research Agent
+pytrends==4.9.2
+praw==7.8.1
+
+# Common
+python-dotenv==1.0.1
+
+# Postgres (for the job poller — when worker.py lands)
+psycopg[binary]==3.2.3

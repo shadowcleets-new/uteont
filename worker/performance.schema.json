@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dna.local/contracts/performance.schema.json",
+  "title": "PerformanceMetrics",
+  "description": "Frozen contract for performance.json. Written by Performance Tracking Agent when GSC is connected; read by Research Agent's self-improvement loop. Nulls allowed everywhere — readers must handle null as 'no signal yet, don't deprioritize'.",
+  "type": "object",
+  "required": ["schema_version", "last_updated", "url_metrics", "cluster_aggregates"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version. Bump on breaking changes."
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of the last write."
+    },
+    "url_metrics": {
+      "type": "array",
+      "description": "Per-URL performance metrics from GSC / GA4.",
+      "items": {
+        "type": "object",
+        "required": ["url", "keyword_cluster"],
+        "properties": {
+          "url":            { "type": "string", "format": "uri" },
+          "keyword_cluster":{ "type": "string" },
+          "rank_current":   { "type": ["integer", "null"], "minimum": 1 },
+          "rank_delta_7d":  { "type": ["integer", "null"] },
+          "ctr":            { "type": ["number",  "null"], "minimum": 0, "maximum": 1 },
+          "impressions":    { "type": ["integer", "null"], "minimum": 0 },
+          "clicks":         { "type": ["integer", "null"], "minimum": 0 },
+          "first_indexed":  { "type": ["string",  "null"], "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "cluster_aggregates": {
+      "type": "array",
+      "description": "Per-cluster rollups consumed by Research Agent's prioritization.",
+      "items": {
+        "type": "object",
+        "required": ["cluster_id", "articles_published"],
+        "properties": {
+          "cluster_id":                 { "type": "string" },
+          "articles_published":         { "type": "integer", "minimum": 0 },
+          "articles_ranking_top_10":    { "type": "integer", "minimum": 0 },
+          "articles_failed_to_rank_90d":{ "type": "integer", "minimum": 0 },
+          "avg_ctr":                    { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "trend": {
+            "type": "string",
+            "enum": ["rising", "flat", "declining", "unknown"]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
