@@ -1,28 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { findDomain, FORMAT_LABELS } from "@/lib/export/registry";
 import type { ExportDomain, ExportFormat } from "@/lib/export/types";
 
 interface ExportButtonProps {
   domain: ExportDomain;
+  /** Optional filter — e.g. `agent.research` to scope a runs export to one agent. */
+  subject?: string;
+  /** Override the visible label. Defaults to "Export". */
+  label?: string;
   className?: string;
 }
 
 /**
  * Quick-export dropdown. Renders disabled if the domain isn't implemented.
- * Click format → triggers a download via /api/export with no filters.
+ * Click format → triggers a download via /api/export with the given filters.
  */
-export function ExportButton({ domain, className = "" }: ExportButtonProps) {
+export function ExportButton({
+  domain,
+  subject,
+  label = "Export",
+  className = "",
+}: ExportButtonProps) {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
   const spec = findDomain(domain);
   const disabled = !spec || !spec.implemented;
 
-  const url = (format: ExportFormat): string =>
-    `/api/export?domain=${encodeURIComponent(domain)}&format=${encodeURIComponent(format)}`;
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const url = (format: ExportFormat): string => {
+    const params = new URLSearchParams({ domain, format });
+    if (subject) params.set("subject", subject);
+    return `/api/export?${params.toString()}`;
+  };
 
   return (
-    <div className={"relative inline-block " + className}>
+    <div ref={ref} className={"relative inline-block " + className}>
       <button
         type="button"
         disabled={disabled}
@@ -35,11 +58,14 @@ export function ExportButton({ domain, className = "" }: ExportButtonProps) {
         }
         title={disabled ? "Not available yet" : "Quick export"}
       >
-        Export ▾
+        {label} ▾
       </button>
 
       {open && !disabled && spec && (
-        <div className="absolute right-0 top-full mt-1 z-10 min-w-[180px] rounded-md border border-[#e8e6dc] bg-white shadow-md py-1">
+        <div className="absolute right-0 top-full mt-1 z-10 min-w-[200px] rounded-md border border-[#e8e6dc] bg-white shadow-lg py-1">
+          <div className="px-4 py-1.5 text-[10px] font-bold tracking-wider text-[#9a988e] border-b border-[#e8e6dc]">
+            DOWNLOAD AS
+          </div>
           {spec.allowedFormats.map((f) => (
             <a
               key={f}

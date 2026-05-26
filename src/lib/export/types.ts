@@ -16,6 +16,7 @@ export interface ExportFilters {
   from?: string;       // ISO date inclusive
   to?: string;         // ISO date inclusive
   statuses?: string[]; // domain-specific status filter
+  subject?: string;    // for runs domain: e.g. 'agent.research' to scope to one agent
 }
 
 export interface ExportRequest {

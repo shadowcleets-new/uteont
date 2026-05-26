@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     from: searchParams.get("from") || undefined,
     to:   searchParams.get("to")   || undefined,
     statuses: searchParams.get("status")?.split(",").filter(Boolean),
+    subject: searchParams.get("subject") || undefined,
   };
 
   const spec = findDomain(domain);

@@ -1,4 +1,4 @@
-import { and, gte, lte, inArray, desc } from "drizzle-orm";
+import { and, gte, lte, inArray, eq, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { runs } from "@/lib/db/schema";
 import type { TabularPayload, ExportFilters } from "../types";
@@ -10,6 +10,7 @@ export async function fetchRunsPayload(
   if (filters.from)     conditions.push(gte(runs.startedAt, new Date(filters.from)));
   if (filters.to)       conditions.push(lte(runs.startedAt, new Date(filters.to)));
   if (filters.statuses?.length) conditions.push(inArray(runs.status, filters.statuses));
+  if (filters.subject)  conditions.push(eq(runs.subjectKey, filters.subject));
 
   let rows: Array<typeof runs.$inferSelect> = [];
   try {
@@ -59,6 +60,7 @@ export async function fetchRunsPayload(
 
 function summarize(f: ExportFilters): string {
   const parts: string[] = [];
+  if (f.subject) parts.push(`subject=${f.subject}`);
   if (f.from) parts.push(`from ${f.from}`);
   if (f.to) parts.push(`to ${f.to}`);
   if (f.statuses?.length) parts.push(`status in [${f.statuses.join(",")}]`);

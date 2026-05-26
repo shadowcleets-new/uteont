@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { findAgent, AGENTS } from "@/lib/agents/registry";
+import { exportTargetFor } from "@/lib/agents/export-mapping";
 import { StatusPill } from "@/components/status-pill";
+import { ExportButton } from "@/components/export-button";
 
 export function generateStaticParams() {
   return AGENTS.map((a) => ({ key: a.key }));
@@ -16,6 +18,7 @@ export default async function AgentPage({ params }: PageProps) {
   if (!agent) notFound();
 
   const pill = agent.implemented ? "Idle" : "Planned";
+  const exportTarget = exportTargetFor(agent);
 
   return (
     <div className="px-9 py-8 max-w-[1100px]">
@@ -30,7 +33,7 @@ export default async function AgentPage({ params }: PageProps) {
         {agent.description}
       </p>
 
-      <div className="flex gap-3 mb-6">
+      <div className="flex gap-3 mb-6 items-center">
         <button
           disabled={!agent.implemented}
           className="rounded-md bg-[#d97757] text-white px-4 py-2 text-sm font-medium hover:bg-[#c66948] disabled:bg-[#f3f1ea] disabled:text-[#9a988e] disabled:cursor-not-allowed transition-colors"
@@ -40,6 +43,17 @@ export default async function AgentPage({ params }: PageProps) {
         <button className="rounded-md bg-white border border-[#cfccc1] text-[#141413] px-4 py-2 text-sm font-medium hover:bg-[#faf9f5] transition-colors">
           Refresh
         </button>
+        <div className="ml-auto">
+          {exportTarget ? (
+            <ExportButton
+              domain={exportTarget.domain}
+              subject={exportTarget.subject}
+              label={exportTarget.label}
+            />
+          ) : (
+            <ExportButton domain="runs" label="Export" />
+          )}
+        </div>
       </div>
 
       <section className="mb-6">
