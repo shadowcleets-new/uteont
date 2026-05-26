@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql, desc, asc, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { jobs } from "@/lib/db/schema";
+import { jobs, runs, keywords } from "@/lib/db/schema";
 
 export interface EnqueueJobInput {
   agentKey: string;
@@ -75,8 +75,16 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
   return (rows[0] as typeof jobs.$inferSelect | undefined) ?? null;
 }
 
+/**
+ * Complete a job: update job row, write a runs entry, and persist
+ * agent-specific output (e.g. research → keywords table).
+ */
 export async function completeJob(jobId: number, result: Record<string, unknown>) {
   const db = getDb();
+  const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+  if (!job) return;
+
+  // 1. Mark job done
   await db
     .update(jobs)
     .set({
@@ -85,6 +93,59 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
       result,
     })
     .where(eq(jobs.id, jobId));
+
+  // 2. Write a runs row (telemetry)
+  const startedAt = (job.claimedAt as Date | null) ?? (job.createdAt as Date);
+  const [run] = await db
+    .insert(runs)
+    .values({
+      subjectKey: `agent.${job.agentKey}`,
+      category: "agent",
+      action: `worker:${job.agentKey}`,
+      cycleId: job.cycleId,
+      jobId: job.id,
+      startedAt,
+      finishedAt: new Date(),
+      status: "success",
+      result,
+    })
+    .returning();
+
+  // 3. Agent-specific persistence
+  if (job.agentKey === "research") {
+    await persistResearchKeywords(job.cycleId, run.id, result);
+  }
+}
+
+async function persistResearchKeywords(
+  cycleId: number | null,
+  runId: number,
+  result: Record<string, unknown>,
+) {
+  const arr = result.keywords;
+  if (!Array.isArray(arr) || arr.length === 0) return;
+  const db = getDb();
+  type Incoming = {
+    keyword: string;
+    search_volume_estimate: number;
+    competition_score: number;
+    source: string;
+    priority_rank: number;
+  };
+  const rows = (arr as Incoming[])
+    .filter((k) => k && typeof k.keyword === "string")
+    .map((k) => ({
+      cycleId: cycleId ?? null,
+      keyword: k.keyword,
+      searchVolumeEstimate: Number(k.search_volume_estimate ?? 0),
+      competitionScore: Number(k.competition_score ?? 0),
+      source: String(k.source ?? "unknown"),
+      priorityRank: Number(k.priority_rank ?? 0),
+      runId,
+      status: "researched",
+    }));
+  if (rows.length === 0) return;
+  await db.insert(keywords).values(rows);
 }
 
 export async function failJob(jobId: number, error: string, retry: boolean) {
@@ -102,6 +163,22 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       error,
     })
     .where(eq(jobs.id, jobId));
+
+  // Only write a failure run if we're giving up (not retrying)
+  if (!shouldRetry) {
+    const startedAt = (row.claimedAt as Date | null) ?? (row.createdAt as Date);
+    await db.insert(runs).values({
+      subjectKey: `agent.${row.agentKey}`,
+      category: "agent",
+      action: `worker:${row.agentKey}`,
+      cycleId: row.cycleId,
+      jobId: row.id,
+      startedAt,
+      finishedAt: new Date(),
+      status: "failure",
+      error,
+    });
+  }
 }
 
 export async function getJob(id: number) {

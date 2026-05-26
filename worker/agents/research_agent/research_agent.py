@@ -104,6 +104,9 @@ def run(progress: ProgressFn = _no_progress, cfg: Config | None = None) -> dict:
             "top_keywords": [r.keyword for r in results[:5]],
             "seeds_used": cfg.seed_keywords,
             "reddit_enabled": cfg.reddit_enabled(),
+            # Full payload — consumed by the Vercel /api/jobs/[id]/complete
+            # endpoint to insert rows into the Postgres `keywords` table.
+            "keywords": [r.to_dict() for r in results],
         }
         run_logger.finish(run_id, "success", summary)
         progress(
