@@ -1,21 +1,31 @@
 /**
  * Drizzle + Neon serverless DB client.
- * Reads DATABASE_URL from env. Auto-pooled by the Neon driver.
+ *
+ * Lazy-initialized: `getDb()` constructs the connection on first call,
+ * after env vars are available. Throws if DATABASE_URL is missing so
+ * callers can catch and degrade gracefully (e.g. exports return empty
+ * payloads when the DB isn't provisioned yet).
  */
 
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
 
-const databaseUrl = process.env.DATABASE_URL;
+let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
-if (!databaseUrl) {
-  // Don't throw at module load — Next.js may eval this during build with
-  // no env. Lazy-check on first use.
-  console.warn("[db] DATABASE_URL is not set");
+export function getDb() {
+  if (!_db) {
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error(
+        "DATABASE_URL is not set. Run `vercel env pull .env.local` after " +
+          "linking the project and provisioning Neon.",
+      );
+    }
+    const sql = neon(url);
+    _db = drizzle(sql, { schema });
+  }
+  return _db;
 }
 
-const sql = neon(databaseUrl ?? "");
-export const db = drizzle(sql, { schema });
-
-export type DB = typeof db;
+export type DB = ReturnType<typeof getDb>;

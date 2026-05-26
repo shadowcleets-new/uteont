@@ -28,6 +28,10 @@ const SECTIONS: NavSection[] = [
     })),
   },
   {
+    title: "DATA",
+    items: [{ label: "Export", href: "/export" }],
+  },
+  {
     title: "SETTINGS",
     items: [{ label: "Settings", href: "/settings" }],
   },
