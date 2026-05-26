@@ -1,41 +1,162 @@
-"""Job poller — picks queued work from Postgres, runs it, writes results back.
+"""UTEONT browser worker — long-poll job queue, dispatch, report results.
 
-Not yet implemented — this file is a placeholder so the structure is visible.
-Implementation lands in the next phase after Vercel + DB are provisioned.
+Loop:
+  1. POST /api/jobs/claim → get next job (or null)
+  2. If null, sleep POLL_INTERVAL seconds
+  3. If job, dispatch to handler keyed by job.agentKey
+  4. POST /api/jobs/<id>/complete with result on success,
+     /api/jobs/<id>/fail on exception
 
-Sketch:
+Run locally:
+    pip install -r worker/requirements.txt
+    export UTEONT_API_BASE=http://localhost:3000   # or prod URL
+    export WORKER_SHARED_SECRET=<match-vercel>
+    python worker/worker.py
 
-    import os, time, psycopg
-    from agents.research_agent.research_agent import run as research_run
-    from agents.qa_agent.qa_agent import validate as qa_validate
-    from agents.seo_optimization_agent.seo_agent import optimize as seo_optimize
-
-    HANDLERS = {
-        "research":         lambda payload: research_run(),
-        "qa":               lambda payload: qa_validate(**payload),
-        "seo-optimization": lambda payload: seo_optimize(**payload),
-        # browser-driven agents (idea-generation, content-writing) will
-        # additionally call browser_automation.ai_studio_controller
-    }
-
-    def main():
-        url = os.environ["DATABASE_URL"]
-        while True:
-            with psycopg.connect(url) as conn:
-                job = claim_one(conn)
-                if not job:
-                    time.sleep(5)
-                    continue
-                run_job(conn, job)
-
-    if __name__ == "__main__":
-        main()
-
-See worker/README.md for deployment options.
+Deployed: see worker/README.md (Railway / Fly / VPS / Vercel Sandbox).
 """
 
-if __name__ == "__main__":
-    raise SystemExit(
-        "worker.py is not yet implemented — see the module docstring for the "
-        "intended shape. Lands in the next phase after Vercel + DB bootstrap."
+from __future__ import annotations
+
+import logging
+import os
+import signal
+import sys
+import time
+from typing import Callable
+
+# Make the agents/ subpackage importable
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from api_client import ApiError, from_env  # noqa: E402
+
+log = logging.getLogger("worker")
+
+POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "5"))
+DEFAULT_AGENT_KEYS = [
+    "research",
+    "idea-generation",
+    "content-writing",
+    "backlink",
+]
+
+
+# --- handlers --------------------------------------------------------
+
+def handle_research(payload: dict) -> dict:
+    from agents.research_agent.research_agent import run
+    return run(progress=lambda m: log.info("research: %s", m))
+
+
+def handle_qa(payload: dict) -> dict:
+    from agents.qa_agent.qa_agent import validate
+    article = (payload.get("article") or "").strip()
+    if not article:
+        raise ValueError("qa requires 'article' in payload")
+    return validate(
+        article,
+        target_keyword=payload.get("targetKeyword"),
+        progress=lambda m: log.info("qa: %s", m),
     )
+
+
+def handle_seo(payload: dict) -> dict:
+    from agents.seo_optimization_agent.seo_agent import optimize
+    article = (payload.get("article") or "").strip()
+    if not article:
+        raise ValueError("seo requires 'article' in payload")
+    return optimize(
+        article,
+        target_keyword=payload.get("targetKeyword"),
+        progress=lambda m: log.info("seo: %s", m),
+    )
+
+
+def handle_not_implemented(name: str) -> Callable[[dict], dict]:
+    def _h(_payload: dict) -> dict:
+        raise NotImplementedError(
+            f"agent '{name}' has no worker handler yet — see worker/worker.py"
+        )
+    return _h
+
+
+HANDLERS: dict[str, Callable[[dict], dict]] = {
+    "research":         handle_research,
+    "qa":               handle_qa,
+    "seo-optimization": handle_seo,
+    "idea-generation":  handle_not_implemented("idea-generation"),
+    "content-writing":  handle_not_implemented("content-writing"),
+    "backlink":         handle_not_implemented("backlink"),
+}
+
+
+# --- main loop -------------------------------------------------------
+
+_stop = False
+
+
+def _on_signal(signum, _frame):
+    global _stop
+    log.info("received signal %s — finishing current job and exiting", signum)
+    _stop = True
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    signal.signal(signal.SIGINT, _on_signal)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _on_signal)
+
+    client = from_env()
+    agent_keys = [k.strip() for k in
+                  os.environ.get("WORKER_AGENTS", ",".join(DEFAULT_AGENT_KEYS)).split(",")
+                  if k.strip()]
+    log.info("worker '%s' starting — polling for agents=%s every %.1fs",
+             client.worker_id, agent_keys, POLL_INTERVAL)
+
+    while not _stop:
+        try:
+            job = client.claim_job(agent_keys)
+        except ApiError as e:
+            log.warning("claim failed: %s — backing off", e)
+            time.sleep(min(60, POLL_INTERVAL * 6))
+            continue
+
+        if not job:
+            time.sleep(POLL_INTERVAL)
+            continue
+
+        job_id = job["id"]
+        agent_key = job["agentKey"]
+        payload = job.get("payload") or {}
+        log.info("claimed job %d for agent='%s'", job_id, agent_key)
+
+        handler = HANDLERS.get(agent_key)
+        if not handler:
+            log.error("no handler for agent='%s'", agent_key)
+            try:
+                client.fail_job(job_id, f"no handler for '{agent_key}'", retry=False)
+            except ApiError as e:
+                log.error("fail report failed: %s", e)
+            continue
+
+        try:
+            result = handler(payload)
+            client.complete_job(job_id, result)
+            log.info("job %d done", job_id)
+        except Exception as e:
+            log.exception("job %d failed", job_id)
+            try:
+                client.fail_job(job_id, f"{type(e).__name__}: {e}", retry=True)
+            except ApiError as ae:
+                log.error("fail report failed: %s", ae)
+
+    log.info("worker exiting cleanly")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

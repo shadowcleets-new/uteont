@@ -84,10 +84,56 @@ uteont/
 npm install
 cp .env.example .env.local
 # Fill DATABASE_URL (or run the Vercel bootstrap flow — see below)
+npm run db:push       # apply schema to your DB
 npm run dev
 ```
 
-App at `http://localhost:3000`.
+App at `http://localhost:3000`. Health check at `http://localhost:3000/api/health`.
+
+## API surface
+
+Public (no auth — assumes Vercel deployment protection):
+
+| Method · Path | What |
+|---|---|
+| `GET /api/health` | Health + env presence + DB reachability |
+| `GET /api/agents` | List the 10 agents registry |
+| `POST /api/agents/[key]/run` | Trigger an agent — runs inline (fn) or enqueues a job (worker) |
+| `GET /api/runs?subject=&limit=` | List runs |
+| `GET /api/runs/[id]` | One run |
+| `GET /api/cycles` · `POST /api/cycles` | List / create research-to-publish cycles |
+| `GET /api/cycles/[id]` · `PATCH /api/cycles/[id]` | Cycle detail / status update |
+| `GET /api/keywords?cycleId=&status=` | List keywords |
+| `PATCH /api/keywords/[id]` | Approve / shelve / etc. |
+| `GET /api/ideas` · `PATCH /api/ideas/[id]` | Idea Generation output |
+| `GET /api/articles` · `GET /api/articles/[id]` · `PATCH /api/articles/[id]` | Drafts |
+| `GET /api/approvals` · `POST /api/approvals` | Audit log of gate decisions |
+| `GET /api/export?domain=&format=&...` | File export (see Export page) |
+
+Authenticated (middleware enforces `Authorization: Bearer <secret>`):
+
+| Method · Path | Auth | What |
+|---|---|---|
+| `POST /api/jobs/claim` | `WORKER_SHARED_SECRET` | Worker claims next queued job atomically |
+| `POST /api/jobs/[id]/complete` | `WORKER_SHARED_SECRET` | Worker reports success + result |
+| `POST /api/jobs/[id]/fail` | `WORKER_SHARED_SECRET` | Worker reports failure (retry-aware) |
+| `GET /api/cron/performance` | `CRON_SECRET` | Daily 07:00 — pulls GSC (stub for now) |
+| `GET /api/cron/digest` | `CRON_SECRET` | Sunday 09:00 — Telegram digest |
+| `POST /api/telegram/webhook` | `X-Telegram-Bot-Api-Secret-Token` | Inline-keyboard callbacks |
+
+## Database
+
+10 tables — `cycles`, `runs`, `jobs`, `keywords`, `ideas`, `articles`,
+`approvals`, `notifications`, `agent_state`, `kv_settings`.
+
+```bash
+npm run db:generate    # generate SQL from schema changes
+npm run db:push        # apply directly to DB (dev)
+npm run db:migrate     # apply migrations (prod)
+npm run db:studio      # browse data in a local UI
+```
+
+Schema in `src/lib/db/schema.ts`. Generated SQL in `drizzle/`.
 
 ## Vercel + database bootstrap
 
