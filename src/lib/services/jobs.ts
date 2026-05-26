@@ -35,7 +35,9 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
   const db = getDb();
 
   // Pick the highest-priority oldest queued job for an allowed agent.
-  // We use a raw atomic UPDATE ... RETURNING with a subselect.
+  // Raw atomic UPDATE ... RETURNING with a subselect; alias snake_case
+  // columns to the Drizzle-side camelCase names so the JSON response
+  // matches the typed schema (workers consume `agentKey`, not `agent_key`).
   const result = await db.execute(sql`
     UPDATE jobs
     SET
@@ -51,7 +53,21 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING *;
+    RETURNING
+      id,
+      agent_key    AS "agentKey",
+      cycle_id     AS "cycleId",
+      payload,
+      status,
+      claimed_by   AS "claimedBy",
+      claimed_at   AS "claimedAt",
+      finished_at  AS "finishedAt",
+      result,
+      error,
+      attempts,
+      max_attempts AS "maxAttempts",
+      priority,
+      created_at   AS "createdAt";
   `);
 
   const rows = (result as unknown as { rows?: unknown[] }).rows ??
