@@ -55,3 +55,6 @@ drizzle/.cache/
 
 # env templates are committed; actual env files are not
 !.env.example
+
+.vercel
+.env*.local
