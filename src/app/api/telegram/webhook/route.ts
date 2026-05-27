@@ -131,7 +131,9 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
         await setUsername(arg);
         return `Username set to '${arg}'. Use /setpassword next.`;
       } catch (e) {
-        return `Failed: ${(e as Error).message}`;
+        const err = e as Error & { cause?: unknown };
+        const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
+        return `Failed: ${err.message}${cause}`.slice(0, 800);
       }
 
     case "/setpassword":
@@ -147,7 +149,9 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
           "⚠️ Recommend deleting this message — your password is in the chat history.",
         ].join("\n");
       } catch (e) {
-        return `Failed: ${(e as Error).message}`;
+        const err = e as Error & { cause?: unknown };
+        const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
+        return `Failed: ${err.message}${cause}`.slice(0, 800);
       }
 
     case "/setgoogle":
@@ -162,7 +166,9 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
           : "\n\n⚠️ Google OAuth not yet configured. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in Vercel env to enable.";
         return `Google sign-in allowlist set to '${arg}'.${note}`;
       } catch (e) {
-        return `Failed: ${(e as Error).message}`;
+        const err = e as Error & { cause?: unknown };
+        const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
+        return `Failed: ${err.message}${cause}`.slice(0, 800);
       }
 
     case "/whoami": {

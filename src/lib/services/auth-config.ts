@@ -4,7 +4,7 @@
  * + /setpassword first).
  */
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/db/client";
 import { authConfig, type AuthConfig } from "@/lib/db/schema";
@@ -25,17 +25,37 @@ export async function getAuthConfig(): Promise<AuthConfig | null> {
   }
 }
 
+/**
+ * Single-row upsert via SELECT-then-UPDATE-or-INSERT.
+ *
+ * Avoids Drizzle's onConflictDoUpdate path which has been flaky against
+ * the Neon HTTP driver in our setup. Two round trips instead of one;
+ * fine for a low-volume admin command.
+ */
 async function upsert(
   fields: Partial<Pick<AuthConfig, "username" | "passwordHash" | "allowedGoogleEmail">>,
 ) {
   const db = getDb();
-  await db
-    .insert(authConfig)
-    .values({ id: ROW_ID, ...fields, updatedAt: new Date() })
-    .onConflictDoUpdate({
-      target: authConfig.id,
-      set: { ...fields, updatedAt: new Date() },
+  const existing = await db
+    .select({ id: authConfig.id })
+    .from(authConfig)
+    .where(eq(authConfig.id, ROW_ID))
+    .limit(1);
+
+  if (existing.length > 0) {
+    await db
+      .update(authConfig)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(eq(authConfig.id, ROW_ID));
+  } else {
+    await db.insert(authConfig).values({
+      id: ROW_ID,
+      username: fields.username ?? null,
+      passwordHash: fields.passwordHash ?? null,
+      allowedGoogleEmail: fields.allowedGoogleEmail ?? null,
+      updatedAt: new Date(),
     });
+  }
 }
 
 export async function setUsername(username: string): Promise<void> {
@@ -61,24 +81,22 @@ export async function setAllowedGoogleEmail(email: string): Promise<void> {
 
 export async function clearAllCreds(): Promise<void> {
   const db = getDb();
-  await db
-    .insert(authConfig)
-    .values({
-      id: ROW_ID,
-      username: null,
-      passwordHash: null,
-      allowedGoogleEmail: null,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: authConfig.id,
-      set: {
-        username: sql`NULL`,
-        passwordHash: sql`NULL`,
-        allowedGoogleEmail: sql`NULL`,
-        updatedAt: new Date(),
-      },
-    });
+  const existing = await db
+    .select({ id: authConfig.id })
+    .from(authConfig)
+    .where(eq(authConfig.id, ROW_ID))
+    .limit(1);
+  const empty = {
+    username: null,
+    passwordHash: null,
+    allowedGoogleEmail: null,
+    updatedAt: new Date(),
+  };
+  if (existing.length > 0) {
+    await db.update(authConfig).set(empty).where(eq(authConfig.id, ROW_ID));
+  } else {
+    await db.insert(authConfig).values({ id: ROW_ID, ...empty });
+  }
 }
 
 export async function verifyCredentials(
