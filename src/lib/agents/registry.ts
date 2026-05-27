@@ -35,18 +35,18 @@ export const AGENTS: AgentSpec[] = [
     name: "Idea Generation Agent",
     sidebarLabel: "2. Idea Generation",
     description:
-      "Converts keyword clusters into article angles + briefs via Gemini 3.1 Pro (thinking_level=low). Output gates at Idea Selection.",
+      "Converts keyword clusters into article angles + briefs via Gemini (free tier). Output gates at Idea Selection.",
     runtime: "worker",
-    implemented: false,
+    implemented: true,
   },
   {
     key: "content-writing",
     name: "Content Writing Agent",
     sidebarLabel: "3. Content Writing",
     description:
-      "Drafts full articles from approved briefs via Gemini 3.1 Pro (thinking_level=medium). Output: markdown drafts.",
+      "Drafts full articles from approved briefs via Gemini (free tier). Output: markdown drafts with auto-generated meta title/description.",
     runtime: "worker",
-    implemented: false,
+    implemented: true,
   },
   {
     key: "qa",
@@ -89,9 +89,9 @@ export const AGENTS: AgentSpec[] = [
     name: "Backlink / Outreach Agent",
     sidebarLabel: "8. Backlink / Outreach",
     description:
-      "Discovers prospects, drafts personalized outreach via Gemini 3.1 Pro (thinking_level=low). All sends require human approval.",
+      "Drafts personalized outreach emails via Gemini (free tier). Never sends — all messages require explicit human approval before going out.",
     runtime: "worker",
-    implemented: false,
+    implemented: true,
   },
   {
     key: "performance-tracking",
