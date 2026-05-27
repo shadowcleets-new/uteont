@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
+import { signOutAction } from "@/app/logout/actions";
 
 interface NavItem {
   label: string;
@@ -45,7 +46,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-[260px] shrink-0 bg-[#f3f1ea] border-r border-[#e8e6dc] h-screen overflow-y-auto sticky top-0">
+    <aside className="w-[260px] shrink-0 bg-[#f3f1ea] border-r border-[#e8e6dc] h-screen overflow-y-auto sticky top-0 flex flex-col">
       <div className="px-5 pt-6 pb-4">
         <Link
           href="/"
@@ -55,7 +56,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      <nav className="py-2">
+      <nav className="py-2 flex-1">
         {SECTIONS.map((section, idx) => (
           <div key={section.title} className={cn(idx > 0 && "mt-6")}>
             <div className="px-5 py-1 text-[10px] font-bold tracking-wider text-[#9a988e]">
@@ -84,6 +85,17 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      <div className="border-t border-[#e8e6dc] px-5 py-4">
+        <form action={signOutAction}>
+          <button
+            type="submit"
+            className="text-[12px] text-[#6b6a64] hover:text-[#a33b2b] transition-colors"
+          >
+            Sign out
+          </button>
+        </form>
+      </div>
     </aside>
   );
 }

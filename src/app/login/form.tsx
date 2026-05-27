@@ -19,7 +19,7 @@ export function LoginForm({ hasGoogle }: LoginFormProps) {
 
   return (
     <div className="bg-white rounded-[12px] border border-[#e8e6dc] p-6 space-y-4">
-      {hasGoogle ? (
+      {hasGoogle && (
         <>
           <form action={googleSignInAction}>
             <button
@@ -39,10 +39,6 @@ export function LoginForm({ hasGoogle }: LoginFormProps) {
             </div>
           </div>
         </>
-      ) : (
-        <div className="rounded-md bg-[#f3f1ea] border border-[#e8e6dc] px-3 py-2 text-[11px] text-[#9a988e] font-serif italic">
-          Google sign-in not yet configured. Use the password form below.
-        </div>
       )}
 
       <form action={formAction} className="space-y-3">

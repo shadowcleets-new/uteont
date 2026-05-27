@@ -23,9 +23,6 @@ export default async function LoginPage() {
           </p>
         </div>
         <LoginForm hasGoogle={hasGoogle} />
-        <p className="text-[11px] text-[#9a988e] text-center mt-6 font-serif">
-          Single-user system. Credentials managed via Telegram bot.
-        </p>
       </div>
     </div>
   );

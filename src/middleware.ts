@@ -81,10 +81,11 @@ export default nextAuth((req) => {
   //    req.auth is populated by the nextAuth() wrapper from the JWT cookie.
   if (req.auth?.user) return NextResponse.next();
 
-  // 4. Not logged in → redirect to /login, preserving the original path.
+  // 4. Not logged in → redirect to clean /login URL (no `next` param, to
+  //    avoid leaking the intended route in the address bar).
   const loginUrl = req.nextUrl.clone();
   loginUrl.pathname = "/login";
-  loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
+  loginUrl.search = "";
   return NextResponse.redirect(loginUrl);
 });
 
