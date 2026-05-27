@@ -44,8 +44,30 @@ DEFAULT_AGENT_KEYS = [
 # --- handlers --------------------------------------------------------
 
 def handle_research(payload: dict) -> dict:
+    from agents.research_agent.config import Config
     from agents.research_agent.research_agent import run
-    return run(progress=lambda m: log.info("research: %s", m))
+
+    # Payload overrides — single source of niche-specific control.
+    # Accepted keys:
+    #   seeds:      list[str] | comma-sep str  → overrides RESEARCH_SEED_KEYWORDS
+    #   maxResults: int                         → cap on output rows
+    #   minResults: int                         → min rows before considering run successful
+    seeds_override: list[str] | None = None
+    raw_seeds = payload.get("seeds")
+    if isinstance(raw_seeds, list):
+        seeds_override = [str(s).strip() for s in raw_seeds if str(s).strip()]
+    elif isinstance(raw_seeds, str):
+        seeds_override = [s.strip() for s in raw_seeds.split(",") if s.strip()]
+
+    cfg = Config.from_env(seeds_override=seeds_override)
+    if isinstance(payload.get("maxResults"), int):
+        cfg.max_results = int(payload["maxResults"])
+    if isinstance(payload.get("minResults"), int):
+        cfg.min_results = int(payload["minResults"])
+
+    log.info("research: seeds=%s max=%d min=%d",
+             cfg.seed_keywords, cfg.max_results, cfg.min_results)
+    return run(progress=lambda m: log.info("research: %s", m), cfg=cfg)
 
 
 def handle_qa(payload: dict) -> dict:

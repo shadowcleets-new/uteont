@@ -9,12 +9,18 @@ Heuristics (free-tool world; no paid SERP intelligence):
 Self-improvement loop: optionally reads performance.json (frozen contract) and
 applies cluster-level boosts / penalties. Tolerant of nulls — no signal yet
 must NOT cause deprioritization.
+
+Relevance + noise filtering — applied to RawSignals BEFORE merging:
+- Drops keywords that share no significant word with any seed
+- Drops noise phrases ("news today", "near me", branded geo terms, etc.)
+- Length sanity (4-100 chars, >= 1 alphabetic token)
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +28,32 @@ from pathlib import Path
 from agents.research_agent.models import KeywordResult, RawSignal
 
 log = logging.getLogger("agents.research.scoring")
+
+# Short tokens that don't contribute to relevance matching.
+STOPWORDS = {
+    "a", "an", "the", "of", "for", "to", "in", "on", "at", "and", "or",
+    "is", "are", "was", "were", "be", "been", "by", "with", "as", "it",
+    "this", "that", "these", "those", "from", "up", "down", "out",
+    # very short common technical terms — keep "ai", "ml" though (caller can re-add)
+    "vs", "i", "we", "you", "your", "my", "our",
+}
+
+# Patterns that almost always indicate noise / irrelevance.
+NOISE_PATTERNS = [
+    re.compile(r"\bnews\s+today\b", re.IGNORECASE),
+    re.compile(r"\bnear\s+me\b", re.IGNORECASE),
+    re.compile(r"\bcheap\s+(flights|tickets|hotels)\b", re.IGNORECASE),
+    re.compile(r"\b(today|tomorrow|yesterday)\b\s*$", re.IGNORECASE),
+    re.compile(r"^\W*$"),  # only punctuation
+    re.compile(r"^[A-Z]\.[A-Z]\.", ),  # initials like "T.S." (often person names)
+]
+
+# Country-style geo tokens (not exhaustive — just common false positives).
+GEO_NOISE = {
+    "india", "usa", "uk", "canada", "australia", "germany", "france",
+    "italy", "spain", "mexico", "brazil", "japan", "china", "russia",
+    "delhi", "mumbai", "london", "paris", "tokyo", "berlin",
+}
 
 
 # Base competition score per source class.
@@ -42,15 +74,69 @@ def _normalize_keyword(raw: str) -> str:
     return " ".join(raw.lower().strip().split())
 
 
+def _significant_tokens(text: str) -> set[str]:
+    """Lowercase alphabetic tokens of length >= 3, excluding stopwords."""
+    tokens = re.findall(r"[a-z]+", text.lower())
+    return {t for t in tokens if len(t) >= 3 and t not in STOPWORDS}
+
+
+def _is_relevant(keyword: str, seed: str) -> bool:
+    """At least one significant seed token must appear in the keyword.
+
+    Falls back to substring of the full seed (case-insensitive) when the
+    seed has no significant tokens (e.g. very short seeds like 'ai').
+    """
+    seed_tokens = _significant_tokens(seed)
+    kw_tokens = _significant_tokens(keyword)
+    if not seed_tokens:
+        return seed.lower().strip() in keyword.lower()
+    return bool(seed_tokens & kw_tokens)
+
+
+def _is_noise(keyword: str) -> bool:
+    if any(p.search(keyword) for p in NOISE_PATTERNS):
+        return True
+    tokens = re.findall(r"[a-z]+", keyword.lower())
+    # Almost-pure-geo phrases like "delhi news"
+    if tokens and all(t in GEO_NOISE or t in STOPWORDS for t in tokens):
+        return True
+    return False
+
+
+def filter_signals(signals: list[RawSignal]) -> tuple[list[RawSignal], dict]:
+    """Apply relevance + noise filters to RawSignals. Returns (kept, stats)."""
+    stats = {"input": len(signals), "dropped_length": 0,
+             "dropped_irrelevant": 0, "dropped_noise": 0, "dropped_seed_match": 0}
+    kept: list[RawSignal] = []
+    for s in signals:
+        kw = _normalize_keyword(s.keyword)
+        if not kw or len(kw) < 4 or len(kw) > 100:
+            stats["dropped_length"] += 1
+            continue
+        # Has to have at least one alphabetic word
+        if not re.search(r"[a-z]", kw):
+            stats["dropped_length"] += 1
+            continue
+        if _is_noise(kw):
+            stats["dropped_noise"] += 1
+            continue
+        seed = str((s.metadata or {}).get("seed", ""))
+        if seed and kw == _normalize_keyword(seed):
+            stats["dropped_seed_match"] += 1
+            continue
+        if seed and not _is_relevant(kw, seed):
+            stats["dropped_irrelevant"] += 1
+            continue
+        kept.append(s)
+    stats["kept"] = len(kept)
+    return kept, stats
+
+
 def merge_signals(signals: list[RawSignal]) -> dict[str, list[RawSignal]]:
     by_kw: dict[str, list[RawSignal]] = defaultdict(list)
     for s in signals:
         kw = _normalize_keyword(s.keyword)
-        if not kw or len(kw) < 3:
-            continue
-        # Drop the seed itself — we want new candidates
-        seed = (s.metadata or {}).get("seed", "")
-        if kw == _normalize_keyword(str(seed)):
+        if not kw:
             continue
         by_kw[kw].append(s)
     return by_kw
@@ -114,7 +200,14 @@ def merge_and_rank(
     performance_path: Path | None = None,
     max_results: int = 50,
 ) -> list[KeywordResult]:
-    grouped = merge_signals(signals)
+    filtered, filter_stats = filter_signals(signals)
+    log.info(
+        "filter: kept %d/%d (drop_len=%d noise=%d irrelev=%d seed=%d)",
+        filter_stats["kept"], filter_stats["input"],
+        filter_stats["dropped_length"], filter_stats["dropped_noise"],
+        filter_stats["dropped_irrelevant"], filter_stats["dropped_seed_match"],
+    )
+    grouped = merge_signals(filtered)
     timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     results: list[KeywordResult] = []
