@@ -94,21 +94,66 @@ def handle_seo(payload: dict) -> dict:
     )
 
 
-def handle_not_implemented(name: str) -> Callable[[dict], dict]:
-    def _h(_payload: dict) -> dict:
-        raise NotImplementedError(
-            f"agent '{name}' has no worker handler yet — see worker/worker.py"
+def handle_idea_generation(payload: dict) -> dict:
+    from agents.idea_generation_agent.idea_agent import generate
+    raw_keywords = payload.get("keywords")
+    if isinstance(raw_keywords, str):
+        keywords = [k.strip() for k in raw_keywords.split(",") if k.strip()]
+    elif isinstance(raw_keywords, list):
+        keywords = [str(k).strip() for k in raw_keywords if str(k).strip()]
+    else:
+        raise ValueError("idea-generation requires 'keywords' (list or comma-string) in payload")
+    n = int(payload.get("nPerKeyword", 5))
+    return generate(
+        keywords,
+        n_per_keyword=n,
+        progress=lambda m: log.info("idea-gen: %s", m),
+    )
+
+
+def handle_content_writing(payload: dict) -> dict:
+    from agents.content_writing_agent.content_agent import write
+    title = str(payload.get("title") or "").strip()
+    brief = str(payload.get("brief") or "").strip()
+    if not title or not brief:
+        raise ValueError("content-writing requires 'title' and 'brief' in payload")
+    return write(
+        title=title,
+        brief=brief,
+        target_keyword=payload.get("targetKeyword"),
+        word_target=int(payload.get("wordTarget", 1200)),
+        intent=payload.get("intent"),
+        progress=lambda m: log.info("content: %s", m),
+    )
+
+
+def handle_outreach(payload: dict) -> dict:
+    from agents.outreach_agent.outreach_agent import draft
+    target_site = str(payload.get("targetSite") or "").strip()
+    context = str(payload.get("context") or "").strip()
+    our_value = str(payload.get("ourValue") or "").strip()
+    if not (target_site and context and our_value):
+        raise ValueError(
+            "outreach requires 'targetSite', 'context', and 'ourValue' in payload"
         )
-    return _h
+    return draft(
+        target_site=target_site,
+        context=context,
+        our_value=our_value,
+        target_email=payload.get("targetEmail"),
+        our_article_url=payload.get("ourArticleUrl"),
+        tone=str(payload.get("tone", "professional")),
+        progress=lambda m: log.info("outreach: %s", m),
+    )
 
 
 HANDLERS: dict[str, Callable[[dict], dict]] = {
     "research":         handle_research,
     "qa":               handle_qa,
     "seo-optimization": handle_seo,
-    "idea-generation":  handle_not_implemented("idea-generation"),
-    "content-writing":  handle_not_implemented("content-writing"),
-    "backlink":         handle_not_implemented("backlink"),
+    "idea-generation":  handle_idea_generation,
+    "content-writing":  handle_content_writing,
+    "backlink":         handle_outreach,
 }
 
 
