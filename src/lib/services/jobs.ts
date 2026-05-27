@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql, desc, asc, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords } from "@/lib/db/schema";
+import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
 
 export interface EnqueueJobInput {
   agentKey: string;
@@ -115,6 +116,13 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
   if (job.agentKey === "research") {
     await persistResearchKeywords(job.cycleId, run.id, result);
   }
+
+  // 4. Telegram notification (best-effort, never throws into caller)
+  try {
+    await notifyJobSuccess(job.agentKey, job.id, result);
+  } catch (e) {
+    console.warn("completeJob: notifyJobSuccess failed", e);
+  }
 }
 
 async function persistResearchKeywords(
@@ -164,7 +172,7 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
     })
     .where(eq(jobs.id, jobId));
 
-  // Only write a failure run if we're giving up (not retrying)
+  // Only write a failure run + notify if we're giving up (not retrying)
   if (!shouldRetry) {
     const startedAt = (row.claimedAt as Date | null) ?? (row.createdAt as Date);
     await db.insert(runs).values({
@@ -178,6 +186,11 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       status: "failure",
       error,
     });
+    try {
+      await notifyJobFailure(row.agentKey, row.id, error);
+    } catch (e) {
+      console.warn("failJob: notifyJobFailure failed", e);
+    }
   }
 }
 
