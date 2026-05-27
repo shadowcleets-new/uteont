@@ -1,0 +1,6 @@
+playwright==1.48.0
+PyYAML==6.0.2
+PySide6==6.10.3
+pytrends==4.9.2
+praw==7.8.1
+python-dotenv==1.0.1

@@ -1,0 +1,29 @@
+# Gemini parameter configs per agent.
+#
+# All agents use Gemini 3.1 Pro via AI Studio (browser, no API).
+# Temperature is locked at 1.0 — Gemini 3 guidance: lowering degrades reasoning.
+# Setting any agent's temperature ≠ 1.0 will log a warning.
+#
+# `thinking_level` is the only routinely-tuned parameter:
+#   - low    → idea generation, outreach drafting
+#   - medium → content writing
+#   - high   → reserved (not currently used)
+
+defaults:
+  model: "Gemini 3.1 Pro"
+  temperature: 1.0
+  top_p: null
+  max_output_tokens: null
+
+agents:
+  self_test:
+    thinking_level: low
+
+  idea_generation:
+    thinking_level: low
+
+  content_writing:
+    thinking_level: medium
+
+  outreach_drafting:
+    thinking_level: low
