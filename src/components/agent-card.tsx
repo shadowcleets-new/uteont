@@ -2,27 +2,18 @@ import Link from "next/link";
 import type { AgentSpec } from "@/lib/agents/registry";
 import { StatusPill } from "./status-pill";
 import type { PillState } from "@/lib/theme";
+import { type AgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 
 interface AgentCardProps {
   agent: AgentSpec;
-  stats?: {
-    totalRuns: number;
-    totalSeconds: number;
-    lastRunAgo?: string;
-    lastStatus?: string;
-  };
+  stats?: AgentStats;
 }
 
-function fmtDuration(s: number): string {
-  if (!s) return "—";
-  if (s < 60) return `${Math.round(s)}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m`;
-  return `${Math.round(s / 3600)}h`;
-}
-
-function pillFor(agent: AgentSpec, stats?: AgentCardProps["stats"]): PillState {
+function pillFor(agent: AgentSpec, stats?: AgentStats): PillState {
   if (!agent.implemented) return "Planned";
+  if (stats?.running && stats.running > 0) return "Running";
   if (stats?.lastStatus === "failure") return "Failed";
+  if (stats?.lastStatus === "success") return "Success";
   return "Idle";
 }
 
@@ -44,10 +35,13 @@ export function AgentCard({ agent, stats }: AgentCardProps) {
       </div>
       <div className="text-[11px] text-[#6b6a64]">
         {total} run{total === 1 ? "" : "s"} · {totalTime} total
+        {stats && stats.successRate > 0 && total > 0 && (
+          <> · {Math.round(stats.successRate * 100)}% ok</>
+        )}
       </div>
       <div className="text-[11px] text-[#9a988e] italic mt-1 font-serif">
-        {stats?.lastRunAgo
-          ? `Last run: ${stats.lastRunAgo}${stats.lastStatus ? ` (${stats.lastStatus})` : ""}`
+        {stats?.lastRunAt
+          ? `Last run: ${fmtAgo(stats.lastRunAt)}${stats.lastStatus ? ` (${stats.lastStatus})` : ""}`
           : "Never run"}
       </div>
     </Link>

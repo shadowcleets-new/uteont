@@ -29,7 +29,11 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "DATA",
-    items: [{ label: "Export", href: "/export" }],
+    items: [
+      { label: "Keywords", href: "/keywords" },
+      { label: "Runs", href: "/runs" },
+      { label: "Export", href: "/export" },
+    ],
   },
   {
     title: "SETTINGS",
