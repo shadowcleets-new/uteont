@@ -42,9 +42,9 @@ Findings are grouped by domain, then sorted by severity descending.
 | F-003 | "Credentials managed via Telegram bot" footer leaked architecture | Privacy | 🟢 | FIXED (`559a046`) |
 | F-004 | `?next=<path>` in redirect URL exposed intended route | Privacy | 🟢 | FIXED (`559a046`) |
 | F-005 | No logout button — sessions had to be cleared via cookies | UX | 🟡 | FIXED (`559a046`) |
-| F-006 | Telegram bot token visible in this conversation history | Security | 🔴 | **ESCALATED → see F-031** · history rewritten (`9598ca0`) · ROTATION PENDING OPERATOR |
-| F-007 | `WORKER_SHARED_SECRET` visible in this conversation history | Security | 🔴 | **ESCALATED → see F-031** · rotated in Vercel (`9598ca0`) · Railway sync PENDING OPERATOR |
-| F-008 | `GEMINI_API_KEY` visible in this conversation history | Security | 🔴 | **ESCALATED → see F-031** · ROTATION PENDING OPERATOR (Google may have auto-revoked) |
+| F-006 | Telegram bot token visible in this conversation history | Security | 🔴 | FIXED — operator rotated via `/revoke` → @BotFather (2026-05-27); new token live in Vercel; webhook re-registered with rotated secret; old token returns 401 |
+| F-007 | `WORKER_SHARED_SECRET` visible in this conversation history | Security | 🔴 | FIXED — operator rotated in both Vercel + Railway via Option A flow (no value in chat); worker observed claiming + completing jobs |
+| F-008 | `GEMINI_API_KEY` visible in this conversation history | Security | 🔴 | FIXED — old key returns HTTP 400 (Google auto-revoked via Secret Scanning partner integration); new key set in Railway via dashboard, idea-generation jobs reaching Gemini and returning results |
 | F-009 | No rate limiting on `/api/auth/*` (credential brute force) | Security | 🟠 | FIXED (`604e7d0`) |
 | F-010 | No login attempt logging or alerts | Security | 🟡 | FIXED (`604e7d0`) |
 | F-011 | Password policy is length-only (no complexity required) | Security | 🟢 | FIXED (`604e7d0`) |
@@ -67,9 +67,13 @@ Findings are grouped by domain, then sorted by severity descending.
 | F-028 | Telegram notification on failure is best-effort — no retry on send failure | Operations | 🟢 | FIXED (`604e7d0`) — 3 attempts, 250ms/1s/4s backoff, skips 4xx |
 | F-029 | NextAuth Google provider has no `hd` (hosted-domain) hint | Security | 🟢 | FIXED (`604e7d0`) — `GOOGLE_HOSTED_DOMAIN` env (optional) |
 | F-030 | Build emits many `LF will be replaced by CRLF` warnings on Windows | Code Quality | 🔵 | FIXED (`604e7d0`) — `.gitattributes` |
-| F-031 | **Live secrets pasted verbatim into committed GAPS_REPORT.md** | Security | 🔴 | FIXED (`9598ca0`) for history + CI guard; rotation pending operator |
+| F-031 | **Live secrets pasted verbatim into committed GAPS_REPORT.md** | Security | 🔴 | FIXED (`9598ca0` history + CI guard; rotation completed via F-006/F-007/F-008) |
 | F-032 | gitleaks runs at CI only, not pre-commit (bypass via `git push --no-verify` possible) | Security | 🟡 | OPEN |
 | F-033 | Operator-facing "document containing secrets must be redacted before commit" checklist not formalized | Process | 🟡 | ACK (committed verbally in incident response; no enforcement) |
+| F-034 | **Silent migration drift — `db:migrate` reported success but migrations 0001 + 0002 never applied** | Operations | 🔴 | FIXED (`31bfead`) — `/api/db-status` endpoint surfaces schema mismatch; future drift detectable in one curl |
+| F-035 | `getAuthConfig` swallowed schema errors as "no row" — produced misleading `/whoami` "not yet set" reply when table didn't exist | Code Quality | 🟠 | FIXED (`31bfead`) — three-state return distinguishes missing-table (`undefined`) from no-row (`null`); 42P01 logged as SCHEMA MISSING |
+| F-036 | `/setuser` success message suggested `/setpassword` (chat-history-leaky) instead of `/setpassword-url` | Privacy | 🟢 | FIXED (`31bfead`) |
+| F-037 | Setup form lacked visibility toggle, live match check, and live policy indicators | UX | 🟢 | FIXED (`c330b76`) — eye toggles, live match + colored border, live policy checklist with three-state per check (neutral/ok/fail), context-aware submit-button label |
 
 ---
 
@@ -605,12 +609,13 @@ Patterns to keep an eye on as the codebase grows:
 
 ## Suggested first-week action plan
 
-Updated after the bulk of the fixes landed. Remaining priorities, ordered:
+Updated 2026-05-27 after the rotation cluster + migration-drift incident landed.
+The urgent F-031 rotation is now complete. Remaining priorities, ordered:
 
-1. **Rotate the three secrets now exposed via F-031** — Telegram bot token (`/revoke` via @BotFather), Gemini API key (https://aistudio.google.com/app/apikey), `WORKER_SHARED_SECRET` (pull from Vercel → paste into Railway). This is the urgent action.
-2. **Install `husky` + gitleaks pre-commit hook** (closes F-032).
-3. **Add `CONTRIBUTING.md` with the redaction policy** (closes F-033).
-4. **Run the first Neon backup-restore drill** documented in OPERATIONS.md (closes F-026's "first drill still owed").
+1. **Install `husky` + gitleaks pre-commit hook** (closes F-032).
+2. **Add `CONTRIBUTING.md` with the redaction policy** (closes F-033).
+3. **Run the first Neon backup-restore drill** documented in OPERATIONS.md (closes F-026's "first drill still owed").
+4. **Add an external uptime probe** that hits `/api/db-status` (auth'd) on a schedule — would have caught F-034 within minutes instead of weeks.
 5. **Move login-attempts purge to its own cron** if `cron/digest` ever gets noisy (currently bundled — fine for now).
 
 ---
@@ -659,6 +664,66 @@ Chronological record of when findings were addressed. Append-only — every batc
   - `WORKER_SHARED_SECRET` rotated in Vercel
 - F-032 (new) gitleaks runs CI-only, not pre-commit — OPEN
 - F-033 (new) No formal redaction checklist for audit-class documents — ACK
+
+### 2026-05-27 · Secret rotations completed
+
+- F-006 Telegram bot token — rotated by operator via `/revoke` → @BotFather
+  - First read of the new token from screenshot OCR misread three chars
+    (`l` vs `I`, `0` vs `O`); operator pasted token as text → rotation
+    succeeded
+  - New `TELEGRAM_BOT_TOKEN` + freshly rotated `TELEGRAM_WEBHOOK_SECRET`
+    set in Vercel
+  - Webhook re-registered against new token; old token returns 401
+  - Test message id=12 delivered to admin chat
+- F-007 `WORKER_SHARED_SECRET` synchronized in Railway (Option A —
+  operator-types-once, no value ever in chat history). Worker observed
+  successfully claiming + completing jobs (Idea Generation job 5
+  visible in admin chat) → end-to-end confirmation
+- F-008 Gemini API key — Google's Secret Scanning partner integration
+  auto-revoked the leaked key (now returns HTTP 400). New key created
+  in AI Studio, set in Railway via dashboard (with my browser-MCP
+  staging the edit; operator clicked Deploy Changes). Idea-generation
+  jobs reaching Gemini and returning results
+
+### 2026-05-27 · Migration-drift incident + UX polish (`31bfead`, `c330b76`)
+
+- F-034 (new) 🔴 Silent migration drift
+  - During the F-009/F-010 + F-011 etc. batch, `npm run db:migrate`
+    reported `[✓] migrations applied successfully!` but only migration
+    0000 was actually applied. Migrations 0001 (auth_config table) and
+    0002 (login_attempts + auth_config columns) silently skipped.
+    Cause: drizzle-kit + Neon-HTTP edge case; the migrations were in
+    the journal but never executed against the DB.
+  - Symptom: `/setuser shadowcleets` got no Telegram reply at all
+    (silent failure). `/whoami` returned misleading "Auth config not
+    yet set" instead of "schema missing".
+  - Diagnosis path: queried Neon directly → "relation auth_config does
+    not exist" → 10 tables present, 12 expected → re-ran db:migrate
+    → 3 migrations now in `drizzle.__drizzle_migrations`, all 12
+    tables present.
+  - Prevention: new auth'd `/api/db-status` endpoint returns
+    `tablesPresent`, `tablesMissing`, `migrationsApplied`. One-shot
+    health check for future schema drift.
+- F-035 (new) 🟠 `getAuthConfig` swallowed schema errors as "no row"
+  - Three-state return now: `AuthConfig` row (data) / `null` (no row,
+    safe state) / `undefined` (schema missing or DB error, loud state).
+  - Postgres error 42P01 specifically detected and logged as
+    "SCHEMA MISSING — run npm run db:migrate".
+- F-036 (new) 🟢 `/setuser` reply suggested unsafe `/setpassword`
+  - Bot reply now reads: "Username set to '<name>'. Next: use
+    /setpassword-url for the secure flow (password never enters this
+    chat history)."
+- F-037 (new) 🟢 Setup form lacked visibility + live feedback
+  - `/setup/[token]` now has eye/eye-off toggles on both fields
+    (independent, `tabIndex=-1`, aria-labeled)
+  - Live confirm-match indicator: empty/match/mismatch states with
+    colored border on the confirm input
+  - Live policy checklist: 12-char floor with live count, blocklist
+    check, char-class diversity counter showing N/4 with one row per
+    class. Three-state per row: neutral (empty) / ✓ green / ✗ red
+  - Submit button disabled until ready, with context-aware label:
+    "Fill both fields" → "Password doesn't meet requirements" →
+    "Passwords don't match" → "Set password"
 
 ---
 
