@@ -37,36 +37,39 @@ Findings are grouped by domain, then sorted by severity descending.
 
 | ID | Title | Domain | Severity | Status |
 |---|---|---|---|---|
-| F-001 | Sidebar nav rendered on unauthenticated `/login` | Privacy | 🟠 | FIXED (this turn) |
-| F-002 | "Google sign-in not yet configured" leaked operational state | Privacy | 🟢 | FIXED (this turn) |
-| F-003 | "Credentials managed via Telegram bot" footer leaked architecture | Privacy | 🟢 | FIXED (this turn) |
-| F-004 | `?next=<path>` in redirect URL exposed intended route | Privacy | 🟢 | FIXED (this turn) |
-| F-005 | No logout button — sessions had to be cleared via cookies | UX | 🟡 | FIXED (this turn) |
-| F-006 | Telegram bot token visible in this conversation history | Security | 🟠 | ACK (rotate again if shared) |
-| F-007 | `WORKER_SHARED_SECRET` visible in this conversation history | Security | 🟠 | ACK |
-| F-008 | `GEMINI_API_KEY` visible in this conversation history | Security | 🟡 | ACK (revoke + reissue if shared) |
-| F-009 | No rate limiting on `/api/auth/*` (credential brute force) | Security | 🟠 | OPEN |
-| F-010 | No login attempt logging or alerts | Security | 🟡 | OPEN |
-| F-011 | Password policy is length-only (no complexity required) | Security | 🟢 | OPEN |
-| F-012 | Telegram admin gate trusts single env var `TELEGRAM_CHAT_ID` | Security | 🟡 | OPEN |
-| F-013 | bcryptjs cost factor 10 — industry now suggests 12+ | Security | 🟢 | OPEN |
-| F-014 | No Content-Security-Policy headers | Security | 🟡 | OPEN |
-| F-015 | No HSTS / preload declared (Vercel default covers some) | Security | 🟢 | OPEN |
-| F-016 | `/setpassword <pw>` sends password plaintext over Telegram chat | Privacy | 🟠 | ACK (single-user, see fix recipe below) |
-| F-017 | `AUTH_SECRET` set only in production env, missing preview/dev | Security | 🟡 | OPEN |
-| F-018 | `/api/health` reveals which env vars are set | Privacy | 🟢 | OPEN |
-| F-019 | Login page `<title>` reveals product name to scanners | Privacy | 🔵 | ACK |
-| F-020 | Several `try/catch { return null }` blocks swallow errors silently | Code Quality | 🟡 | OPEN |
-| F-021 | No automated tests anywhere in the repo | Code Quality | 🟠 | OPEN |
-| F-022 | Inline arbitrary Tailwind values (`bg-[#d97757]`) scattered — should be tokens | Code Quality | 🟢 | OPEN |
-| F-023 | `NEXT_PUBLIC_APP_URL` hardcoded fallback won't update with custom domain | Code Quality | 🟢 | OPEN |
-| F-024 | Worker has no `/health` endpoint — silent death possible | Operations | 🟡 | OPEN |
-| F-025 | Job retry uses fixed attempt cap, no exponential backoff | Operations | 🟢 | OPEN |
-| F-026 | No backup-restore drill for Neon | Operations | 🟡 | OPEN |
-| F-027 | Worker job `result` JSON accumulates indefinitely in `jobs` table | Operations | 🟢 | OPEN |
-| F-028 | Telegram notification on failure is best-effort — no retry on send failure | Operations | 🟢 | OPEN |
-| F-029 | NextAuth Google provider has no `hd` (hosted-domain) hint | Security | 🟢 | OPEN |
-| F-030 | Build emits many `LF will be replaced by CRLF` warnings on Windows | Code Quality | 🔵 | ACK |
+| F-001 | Sidebar nav rendered on unauthenticated `/login` | Privacy | 🟠 | FIXED (`559a046`) |
+| F-002 | "Google sign-in not yet configured" leaked operational state | Privacy | 🟢 | FIXED (`559a046`) |
+| F-003 | "Credentials managed via Telegram bot" footer leaked architecture | Privacy | 🟢 | FIXED (`559a046`) |
+| F-004 | `?next=<path>` in redirect URL exposed intended route | Privacy | 🟢 | FIXED (`559a046`) |
+| F-005 | No logout button — sessions had to be cleared via cookies | UX | 🟡 | FIXED (`559a046`) |
+| F-006 | Telegram bot token visible in this conversation history | Security | 🔴 | **ESCALATED → see F-031** · history rewritten (`9598ca0`) · ROTATION PENDING OPERATOR |
+| F-007 | `WORKER_SHARED_SECRET` visible in this conversation history | Security | 🔴 | **ESCALATED → see F-031** · rotated in Vercel (`9598ca0`) · Railway sync PENDING OPERATOR |
+| F-008 | `GEMINI_API_KEY` visible in this conversation history | Security | 🔴 | **ESCALATED → see F-031** · ROTATION PENDING OPERATOR (Google may have auto-revoked) |
+| F-009 | No rate limiting on `/api/auth/*` (credential brute force) | Security | 🟠 | FIXED (`604e7d0`) |
+| F-010 | No login attempt logging or alerts | Security | 🟡 | FIXED (`604e7d0`) |
+| F-011 | Password policy is length-only (no complexity required) | Security | 🟢 | FIXED (`604e7d0`) |
+| F-012 | Telegram admin gate trusts single env var `TELEGRAM_CHAT_ID` | Security | 🟡 | FIXED (`604e7d0`) |
+| F-013 | bcryptjs cost factor 10 — industry now suggests 12+ | Security | 🟢 | FIXED (`604e7d0`) |
+| F-014 | No Content-Security-Policy headers | Security | 🟡 | FIXED (`604e7d0`) |
+| F-015 | No HSTS / preload declared (Vercel default covers some) | Security | 🟢 | FIXED (`604e7d0`) |
+| F-016 | `/setpassword <pw>` sends password plaintext over Telegram chat | Privacy | 🟠 | FIXED (`604e7d0`) — `/setpassword-url` flow available |
+| F-017 | `AUTH_SECRET` set only in production env, missing preview/dev | Security | 🟡 | ACK (team sensitive-vars policy blocks dev/preview; documented in OPERATIONS.md) |
+| F-018 | `/api/health` reveals which env vars are set | Privacy | 🟢 | FIXED (`604e7d0`) — split public minimal vs authed full |
+| F-019 | Login page `<title>` reveals product name to scanners | Privacy | 🔵 | FIXED (`604e7d0`) |
+| F-020 | Several `try/catch { return null }` blocks swallow errors silently | Code Quality | 🟡 | FIXED (`604e7d0`) — log before returning empty |
+| F-021 | No automated tests anywhere in the repo | Code Quality | 🟠 | FIXED (`e6849ae`) — Vitest scaffolded, 10/10 password-policy tests pass |
+| F-022 | Inline arbitrary Tailwind values (`bg-[#d97757]`) scattered — should be tokens | Code Quality | 🟢 | FIXED (`e6849ae`) — brand-* tokens in @theme; gradual migration |
+| F-023 | `NEXT_PUBLIC_APP_URL` hardcoded fallback won't update with custom domain | Code Quality | 🟢 | ACK — fallback documented in code, full removal would break local dev |
+| F-024 | Worker has no `/health` endpoint — silent death possible | Operations | 🟡 | FIXED (`604e7d0`) — stdlib HTTP server on :8080 with counters |
+| F-025 | Job retry uses fixed attempt cap, no exponential backoff | Operations | 🟢 | FIXED (`604e7d0`) — 5s × 2^attempts, cap 5min |
+| F-026 | No backup-restore drill for Neon | Operations | 🟡 | DOCUMENTED (`e6849ae`) — OPERATIONS.md has procedure + RTO/RPO; first drill still owed |
+| F-027 | Worker job `result` JSON accumulates indefinitely in `jobs` table | Operations | 🟢 | FIXED (`604e7d0`) — weekly cron purges done jobs > 30d |
+| F-028 | Telegram notification on failure is best-effort — no retry on send failure | Operations | 🟢 | FIXED (`604e7d0`) — 3 attempts, 250ms/1s/4s backoff, skips 4xx |
+| F-029 | NextAuth Google provider has no `hd` (hosted-domain) hint | Security | 🟢 | FIXED (`604e7d0`) — `GOOGLE_HOSTED_DOMAIN` env (optional) |
+| F-030 | Build emits many `LF will be replaced by CRLF` warnings on Windows | Code Quality | 🔵 | FIXED (`604e7d0`) — `.gitattributes` |
+| F-031 | **Live secrets pasted verbatim into committed GAPS_REPORT.md** | Security | 🔴 | FIXED (`9598ca0`) for history + CI guard; rotation pending operator |
+| F-032 | gitleaks runs at CI only, not pre-commit (bypass via `git push --no-verify` possible) | Security | 🟡 | OPEN |
+| F-033 | Operator-facing "document containing secrets must be redacted before commit" checklist not formalized | Process | 🟡 | ACK (committed verbally in incident response; no enforcement) |
 
 ---
 
@@ -513,13 +516,76 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-030 — Build emits `LF will be replaced by CRLF` warnings on Windows
 
-**Domain:** Code Quality · **Severity:** 🔵 Info · **Status:** ACK
+**Domain:** Code Quality · **Severity:** 🔵 Info · **Status:** FIXED (`604e7d0`)
 
 **Description.** Every `git commit` from the Windows dev machine warns about line-ending normalization. Files have LF in repo, get CRLF on checkout.
 
 **Impact.** None functional. Visual noise.
 
-**Acceptance.** `git config core.autocrlf true` is the Windows default. Recorded for completeness; could be silenced via `.gitattributes` with `* text=auto eol=lf` but not worth a commit alone.
+**Fix applied.** Added `.gitattributes` with `* text=auto eol=lf` plus explicit binary markers for `*.png`, `*.woff2`, etc., and `*.bat text eol=crlf` so Windows batch files keep CRLF as the OS expects.
+
+---
+
+### F-031 — Live secrets pasted verbatim into committed GAPS_REPORT.md
+
+**Domain:** Security · **Severity:** 🔴 Critical · **Status:** FIXED (`9598ca0`) for history + CI; **ROTATION PENDING OPERATOR**
+
+**Description.** While documenting F-006, F-007, F-008 (secrets exposed in this conversation transcript), the LLM included the actual literal secret values in the committed audit report instead of redacted forms. The report was pushed to the public GitHub repo. GitHub Secret Scanning detected the Google API key and the Telegram bot token within minutes and emailed the operator.
+
+Specifically leaked via commits `559a046`, `604e7d0`, and `3c919bc` (now rewritten):
+- One current Telegram bot token + one previously-rotated one
+- One Google Gemini API key
+- Three `WORKER_SHARED_SECRET` values across rotations
+
+**Root cause.** Process failure. The author of the audit document failed to apply the redaction policy they were documenting. Treated the value strings as "evidence" rather than as live credentials. No pre-commit secrets scan was in place to catch the mistake.
+
+**How it appeared.** The audit document narrative ("the current token is X, in chat history") naturally invited including the value. Subjectively, the secrets felt "already known" because they'd been pasted in chat — but committing them to a public repo escalates the exposure dramatically (from one chat transcript to anyone scraping GitHub).
+
+**Impact.** GitHub indexes public commits within seconds, so the secrets must be treated as compromised by external parties:
+- Telegram bot token: full bot takeover possible until revoked
+- Gemini API key: free-tier quota abuse possible until revoked; Google may have auto-revoked as a Secret Scanning partner
+- `WORKER_SHARED_SECRET`: ability to impersonate the worker, poison the keyword pipeline, return false results until rotated
+
+**Fix applied (this audit's mitigation).**
+1. `git filter-repo --replace-text` rewrote every commit on `main` to substitute each secret string with `<REDACTED>` placeholders. 21 commits processed.
+2. Force-pushed (`3c919bc` → `e6849ae` → `9598ca0`). GitHub no longer has any commit containing the live values.
+3. Added `.gitleaks.toml` + `.github/workflows/secrets-scan.yml`. Gitleaks runs on every push and PR with default ruleset + custom rules for Telegram bot tokens, Google AI Studio keys, and worker secrets in our naming convention. Allowlist for `<*_REDACTED>` placeholders so the audit report itself doesn't trigger false positives.
+4. `WORKER_SHARED_SECRET` rotated in Vercel (new value live; old returns 401 on `/api/jobs/claim`).
+
+**Still pending operator (rotation cannot be done remotely).**
+- Telegram bot: `/revoke` via @BotFather, share new token, I update Vercel + re-register webhook.
+- Gemini API key: delete + regenerate at https://aistudio.google.com/app/apikey, share new value, I update Railway env.
+- `WORKER_SHARED_SECRET`: pull new value from Vercel (via `vercel env pull .env.tmp --environment=production`) and paste into Railway env.
+
+**Prevention going forward.**
+- Any file whose name or content references secrets, tokens, keys, or credentials is automatically suspect. Run `npx gitleaks detect --no-git --source <file>` before staging.
+- Audit documentation may NEVER contain literal secret values. Only `<REDACTED>`, `8979...c` truncated form, or descriptions of the secret's shape.
+- Pre-commit hook (see F-032) would catch this even if discipline lapses.
+- The gitleaks GitHub Action is the secondary safety net for PR-based workflows; pre-commit is the primary.
+
+---
+
+### F-032 — gitleaks runs at CI only, not pre-commit
+
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** OPEN
+
+**Description.** The gitleaks safety net added in F-031 runs on `git push` (when GitHub Actions fire). It does not run on `git commit`, so a developer can locally make a contaminated commit and not realize until the push fails. Worse: `git push --no-verify` bypasses it entirely if the bypass is at the GitHub Actions level (it isn't — Actions can't be skipped via `--no-verify` — but the principle stands for any future pre-commit hook).
+
+**Impact.** A momentary lapse on a local machine can create a commit that contains secrets in its diff, which sits in local history until pushed. If `git filter-repo` is needed again, it's another round of force-push-and-rewrite — disruptive.
+
+**Prevention.** Add `husky` + a `pre-commit` hook that runs `gitleaks protect --staged` on every commit. Makes the local feedback loop instant and pre-empts the CI failure.
+
+---
+
+### F-033 — Operator-facing "secrets must be redacted before commit" checklist not formalized
+
+**Domain:** Process · **Severity:** 🟡 Medium · **Status:** ACK
+
+**Description.** The lesson from F-031 lives in this report and the incident-response Telegram messages but is not encoded as a process control. There's no PR template, no CONTRIBUTING.md section, no auto-attached comment from a bot.
+
+**Impact.** When future operators (or future LLM sessions) work on this repo, the discipline depends on remembering. Pre-commit gitleaks (F-032) covers most cases, but a process artifact reinforces it.
+
+**Prevention.** Add a `CONTRIBUTING.md` section + a PR template checkbox: "I confirm no committed file contains a live secret. Audit/security docs reference secrets only via redacted forms (`<REDACTED>`, partial truncation, or by shape)."
 
 ---
 
@@ -539,10 +605,63 @@ Patterns to keep an eye on as the codebase grows:
 
 ## Suggested first-week action plan
 
-If you only have a few hours, do these in order:
+Updated after the bulk of the fixes landed. Remaining priorities, ordered:
 
-1. **Rotate Telegram bot token + worker secret + Gemini key** once this conversation is archived (mitigates F-006, F-007, F-008).
-2. **Pick a 20+ character random password** for the credentials login (mitigates F-009 + F-011).
-3. **Add `vercel-firewall` rate limit** on `/api/auth/*` (closes F-009 properly).
-4. **Implement F-020 fix** (log caught errors) — high leverage for future debuggability.
-5. **Add the smoke test from F-001 prevention** — guard against the next pre-auth leak.
+1. **Rotate the three secrets now exposed via F-031** — Telegram bot token (`/revoke` via @BotFather), Gemini API key (https://aistudio.google.com/app/apikey), `WORKER_SHARED_SECRET` (pull from Vercel → paste into Railway). This is the urgent action.
+2. **Install `husky` + gitleaks pre-commit hook** (closes F-032).
+3. **Add `CONTRIBUTING.md` with the redaction policy** (closes F-033).
+4. **Run the first Neon backup-restore drill** documented in OPERATIONS.md (closes F-026's "first drill still owed").
+5. **Move login-attempts purge to its own cron** if `cron/digest` ever gets noisy (currently bundled — fine for now).
+
+---
+
+## Resolution log
+
+Chronological record of when findings were addressed. Append-only — every batch of fixes adds an entry. Commit shas reference the rewritten history (post-`9598ca0`).
+
+### 2026-05-27 · UI privacy + UX (`559a046`)
+
+- F-001 Sidebar nav on /login → fixed (conditional render based on session)
+- F-002 "Google sign-in not configured" wording → removed
+- F-003 "Credentials managed via Telegram bot" footer → removed
+- F-004 `?next=<path>` in redirect URL → stripped
+- F-005 No logout button → added to sidebar footer
+- F-016 plain-text `/setpassword` → `/setpassword-url` one-time URL flow available
+
+### 2026-05-27 · Auth + observability + queue resilience (`604e7d0`)
+
+- F-009 + F-010 Rate limiting + login attempt audit (login_attempts table, 10 fails / 15 min lockout)
+- F-011 + F-013 Password policy (12+ chars, 3 of 4 char classes, blocklist) + bcrypt cost 12
+- F-012 Admin chat ID DB-backed with env fallback (new `/setadmin` command)
+- F-014 + F-015 CSP, HSTS, X-Frame-Options DENY, Permissions-Policy headers
+- F-018 `/api/health` split: anonymous = minimal, authed = full env diagnostic
+- F-019 Login page title generic ("Sign in")
+- F-020 try/catch returns log error before returning empty
+- F-024 Worker `/health` HTTP endpoint on :8080
+- F-025 Exponential backoff: 5s × 2^attempts, cap 5min
+- F-027 Weekly cron purges done jobs > 30 days
+- F-028 Telegram sendMessage retries 3× with 250ms / 1s / 4s backoff
+- F-029 Google `hd` hint via `GOOGLE_HOSTED_DOMAIN` env (optional)
+- F-030 `.gitattributes` for LF normalization
+
+### 2026-05-27 · Tests + theme tokens + ops doc (`e6849ae`)
+
+- F-021 Vitest scaffolded, 10/10 password-policy tests pass
+- F-022 Brand palette as Tailwind theme tokens (`brand-*`)
+- F-026 OPERATIONS.md runbook (architecture, secret rotation procedures, Neon backup-restore drill, incident playbooks)
+
+### 2026-05-27 · Secrets cleanup (`9598ca0`)
+
+- F-031 (new) Live secrets pasted into committed GAPS_REPORT.md
+  - History rewritten via `git filter-repo --replace-text` across all 21 commits
+  - Force-pushed to overwrite `main` on GitHub
+  - `.gitleaks.toml` + `.github/workflows/secrets-scan.yml` added as CI guard
+  - `WORKER_SHARED_SECRET` rotated in Vercel
+- F-032 (new) gitleaks runs CI-only, not pre-commit — OPEN
+- F-033 (new) No formal redaction checklist for audit-class documents — ACK
+
+---
+
+## Update policy reminder
+
+> This file is **append-only and human-controlled**. The LLM modifies it only when the operator explicitly says *"update the gaps report"*. New findings get new IDs (next: F-034). When a finding is resolved, the **Status** column is updated with the commit sha but the **Description / Root cause / Impact** sections are preserved verbatim as audit history. Old "Status" lines are not deleted — they live in git history if anyone needs to know what the status used to be.
