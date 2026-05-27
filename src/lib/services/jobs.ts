@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql, desc, asc, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { jobs, runs, keywords } from "@/lib/db/schema";
+import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
 
 export interface EnqueueJobInput {
@@ -112,9 +112,19 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
     })
     .returning();
 
-  // 3. Agent-specific persistence
-  if (job.agentKey === "research") {
-    await persistResearchKeywords(job.cycleId, run.id, result);
+  // 3. Agent-specific persistence (each wrapped — a typed-table issue
+  //    must not roll back the runs row or the job 'done' status).
+  try {
+    if (job.agentKey === "research") {
+      await persistResearchKeywords(job.cycleId, run.id, result);
+    } else if (job.agentKey === "idea-generation") {
+      await persistIdeas(job.cycleId, result);
+    } else if (job.agentKey === "content-writing") {
+      await persistArticle(job.cycleId, job.payload as Record<string, unknown>, result);
+    }
+    // outreach/backlink: result captured in runs.result_json; no typed table v1.
+  } catch (e) {
+    console.warn(`completeJob: agent-persist failed for ${job.agentKey}`, e);
   }
 
   // 4. Telegram notification (best-effort, never throws into caller)
@@ -154,6 +164,62 @@ async function persistResearchKeywords(
     }));
   if (rows.length === 0) return;
   await db.insert(keywords).values(rows);
+}
+
+async function persistIdeas(
+  cycleId: number | null,
+  result: Record<string, unknown>,
+) {
+  const arr = result.ideas;
+  if (!Array.isArray(arr) || arr.length === 0) return;
+  const db = getDb();
+  type IncomingIdea = { keyword: string; angle: string; brief: string; intent?: string };
+
+  for (const raw of arr as IncomingIdea[]) {
+    if (!raw || typeof raw.angle !== "string" || typeof raw.keyword !== "string") continue;
+    // Try to link to an existing keyword row by exact text match (most-recent wins).
+    let keywordId: number | null = null;
+    try {
+      const [match] = await db
+        .select({ id: keywords.id })
+        .from(keywords)
+        .where(eq(keywords.keyword, raw.keyword))
+        .orderBy(desc(keywords.id))
+        .limit(1);
+      keywordId = match?.id ?? null;
+    } catch {
+      keywordId = null;
+    }
+    await db.insert(ideas).values({
+      cycleId: cycleId ?? null,
+      keywordId,
+      angle: raw.angle.slice(0, 500),
+      brief: raw.brief ?? "",
+      intent: raw.intent ? raw.intent.slice(0, 50) : null,
+      status: "proposed",
+    });
+  }
+}
+
+async function persistArticle(
+  cycleId: number | null,
+  payload: Record<string, unknown>,
+  result: Record<string, unknown>,
+) {
+  const title = String(result.title ?? "").trim();
+  const body = String(result.body ?? "").trim();
+  if (!title || !body) return;
+  const db = getDb();
+  await db.insert(articles).values({
+    cycleId: cycleId ?? null,
+    ideaId: typeof payload.ideaId === "number" ? (payload.ideaId as number) : null,
+    title,
+    slug: String(result.slug ?? title.toLowerCase().replace(/[^a-z0-9]+/g, "-")).slice(0, 200),
+    body,
+    metaTitle: result.metaTitle ? String(result.metaTitle).slice(0, 200) : null,
+    metaDescription: result.metaDescription ? String(result.metaDescription).slice(0, 300) : null,
+    status: "draft",
+  });
 }
 
 export async function failJob(jobId: number, error: string, retry: boolean) {
