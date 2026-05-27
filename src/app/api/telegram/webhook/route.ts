@@ -136,7 +136,12 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
       if (!arg) return "Usage: /setuser <username>";
       try {
         await setUsername(arg);
-        return `Username set to '${arg}'. Use /setpassword next.`;
+        return [
+          `Username set to '${arg}'.`,
+          "",
+          "Next: use /setpassword-url for the secure flow",
+          "(password never enters this chat history).",
+        ].join("\n");
       } catch (e) {
         const err = e as Error & { cause?: unknown };
         const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";

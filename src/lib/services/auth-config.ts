@@ -48,7 +48,14 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
-export async function getAuthConfig(): Promise<AuthConfig | null> {
+/**
+ * Distinguishes "no row yet" (`null`) from "table missing / DB unreachable"
+ * (`undefined`). Callers that only need the optional value should pass through
+ * undefined as null; admin paths should surface the schema error loudly so the
+ * silent-migration-drift incident (May 27 2026 — see GAPS_REPORT F-034) can't
+ * recur unnoticed.
+ */
+export async function getAuthConfig(): Promise<AuthConfig | null | undefined> {
   try {
     const db = getDb();
     const [row] = await db
@@ -58,7 +65,15 @@ export async function getAuthConfig(): Promise<AuthConfig | null> {
       .limit(1);
     return row ?? null;
   } catch (e) {
-    console.warn("[auth-config.getAuthConfig] DB error:", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    // The specific Postgres error 42P01 means the table doesn't exist —
+    // a migration-drift bug, not "no config yet". Surface it.
+    if (/relation .* does not exist/i.test(msg) || msg.includes("42P01")) {
+      console.error("[auth-config] SCHEMA MISSING — auth_config table not in DB. Run `npm run db:migrate`.");
+      // returning undefined (vs null) lets admin paths detect schema issues
+      return undefined;
+    }
+    console.warn("[auth-config.getAuthConfig] DB error:", msg);
     return null;
   }
 }
@@ -122,7 +137,9 @@ export async function setAllowedGoogleEmail(email: string): Promise<void> {
  */
 export async function getAdminChatId(): Promise<string | null> {
   const cfg = await getAuthConfig();
-  if (cfg?.adminChatId) return cfg.adminChatId;
+  if (cfg && cfg.adminChatId) return cfg.adminChatId;
+  // cfg === undefined means schema missing — admin commands will be denied
+  // by the chat-id comparison further up; env fallback still works.
   return process.env.TELEGRAM_CHAT_ID ?? null;
 }
 
