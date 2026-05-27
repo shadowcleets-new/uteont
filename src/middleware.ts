@@ -57,14 +57,35 @@ function checkServiceAuth(req: NextRequest): NextResponse | null {
   return null;
 }
 
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth", // NextAuth endpoints (signin, callback, csrf, ...)
+  "/api/health",
+];
+
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+}
+
 export default nextAuth((req) => {
-  // 1. Service routes first (bypass session-based redirect).
+  const pathname = req.nextUrl.pathname;
+
+  // 1. Service routes first — they have their own auth (Bearer / secret header).
   const serviceResponse = checkServiceAuth(req);
   if (serviceResponse) return serviceResponse;
 
-  // 2. authorized() in auth.config returned false → NextAuth redirects to /login.
-  //    Returning NextResponse.next() here lets the session-based logic run.
-  return NextResponse.next();
+  // 2. Public paths — no auth required.
+  if (isPublic(pathname)) return NextResponse.next();
+
+  // 3. Everything else requires a NextAuth session.
+  //    req.auth is populated by the nextAuth() wrapper from the JWT cookie.
+  if (req.auth?.user) return NextResponse.next();
+
+  // 4. Not logged in → redirect to /login, preserving the original path.
+  const loginUrl = req.nextUrl.clone();
+  loginUrl.pathname = "/login";
+  loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
+  return NextResponse.redirect(loginUrl);
 });
 
 export const config = {
