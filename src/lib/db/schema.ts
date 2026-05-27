@@ -261,6 +261,52 @@ export const loginAttempts = pgTable(
   }),
 );
 
+/**
+ * P1 — Director Agent tables.
+ * One conversation = one chat thread with the Director. Persists across
+ * web + Telegram surfaces so the user can pick up where they left off.
+ */
+export const conversations = pgTable(
+  "conversations",
+  {
+    id:            serial("id").primaryKey(),
+    title:         text("title"),
+    goal:          text("goal"),          // the parsed end-goal from the user's initial message
+    status:        text("status").notNull().default("active"),  // active | paused | completed | archived
+    planApproved:  boolean("plan_approved").notNull().default(false),
+    surface:       text("surface").notNull().default("web"),  // web | telegram | both
+    createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:     timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byStatus:        index("conversations_status_idx").on(t.status),
+    byLastMessage:   index("conversations_last_message_idx").on(t.lastMessageAt),
+  }),
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id:             serial("id").primaryKey(),
+    conversationId: integer("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    role:           text("role").notNull(),  // user | assistant | system | tool
+    content:        text("content").notNull(),
+    /**
+     * For assistant messages: { intent, actions: [{ tool, args, jobId }], plan? }
+     * For tool messages:      { tool, jobId, result }
+     * For system messages:    { kind: 'job-completed' | 'job-failed' | ..., jobId, result }
+     */
+    payload:        jsonb("payload"),
+    surface:        text("surface").notNull().default("web"),  // web | telegram
+    createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byConversation: index("messages_conversation_idx").on(t.conversationId),
+    byCreated:      index("messages_created_idx").on(t.createdAt),
+  }),
+);
+
 export type Cycle = typeof cycles.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
@@ -273,3 +319,5 @@ export type AgentState = typeof agentState.$inferSelect;
 export type KvSetting = typeof kvSettings.$inferSelect;
 export type AuthConfig = typeof authConfig.$inferSelect;
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;

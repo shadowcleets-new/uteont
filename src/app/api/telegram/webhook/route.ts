@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, handled: "callback_query", data, ackText });
   }
 
-  // Plain text message — command dispatcher
+  // Plain text message — either a slash command OR free-form for the Director
   const msg = update.message as Record<string, unknown> | undefined;
   if (msg) {
     const chat = msg.chat as Record<string, unknown> | undefined;
@@ -72,10 +72,68 @@ export async function POST(req: NextRequest) {
     if (chatId && text.startsWith("/")) {
       const reply = await handleCommand(text, chatId);
       if (reply) await sendMessage({ chatId, text: reply });
+    } else if (chatId && text.length > 0) {
+      // Free-form message → route to the Director Agent
+      try {
+        const adminChatId = await getAdminChatId();
+        if (!adminChatId || chatId !== adminChatId) {
+          await sendMessage({ chatId, text: "Not authorized." });
+        } else {
+          await routeToDirector(chatId, text);
+        }
+      } catch (e) {
+        const err = e as Error;
+        await sendMessage({
+          chatId,
+          text: `Director error: ${err.message.slice(0, 400)}`,
+        });
+      }
     }
   }
 
   return NextResponse.json({ ok: true, handled: "ignored" });
+}
+
+// ------------------------------------------------------------------------
+// Free-form message routing to Director
+// ------------------------------------------------------------------------
+
+async function routeToDirector(chatId: string, text: string): Promise<void> {
+  const { runDirectorTurn } = await import("@/lib/services/director");
+  const {
+    getActiveTelegramConversation,
+    createConversation,
+    getMessages,
+  } = await import("@/lib/services/conversations");
+
+  let conversation = await getActiveTelegramConversation();
+  // If no active Telegram conversation, OR the previous one is older than
+  // 24h and the user starts with what looks like a new goal, fork a new one.
+  if (!conversation) {
+    conversation = await createConversation({ surface: "telegram" });
+  } else if (
+    text.toLowerCase().startsWith("new ") ||
+    text.toLowerCase() === "reset" ||
+    text.toLowerCase().startsWith("start over")
+  ) {
+    conversation = await createConversation({ surface: "telegram" });
+  }
+
+  const history = await getMessages(conversation.id, 60);
+  const { response } = await runDirectorTurn({
+    conversation,
+    history,
+    newUserMessage: text,
+    surface: "telegram",
+  });
+
+  // Reply on Telegram with the assistant's text. Markdown disabled to avoid
+  // parse errors from arbitrary content (URLs, brackets, etc.).
+  await sendMessage({
+    chatId,
+    text: response.text || "(no response)",
+    parseMode: undefined,
+  });
 }
 
 // ------------------------------------------------------------------------

@@ -133,6 +133,25 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
   } catch (e) {
     console.warn("completeJob: notifyJobSuccess failed", e);
   }
+
+  // 5. If this job was dispatched by the Director, post a system message
+  //    into that conversation so the Director can plan the next step.
+  try {
+    const ctx = (job.payload as Record<string, unknown> | null)?.[
+      "_directorContext"
+    ] as { conversationId?: number } | undefined;
+    if (ctx?.conversationId) {
+      const { appendMessage } = await import("./conversations");
+      await appendMessage({
+        conversationId: ctx.conversationId,
+        role: "system",
+        content: `${job.agentKey} job ${job.id} completed`,
+        payload: { kind: "job-completed", agentKey: job.agentKey, jobId: job.id, result },
+      });
+    }
+  } catch (e) {
+    console.warn("completeJob: director-conversation update failed", e);
+  }
 }
 
 async function persistResearchKeywords(

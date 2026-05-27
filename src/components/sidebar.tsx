@@ -19,7 +19,10 @@ interface NavSection {
 const SECTIONS: NavSection[] = [
   {
     title: "OVERVIEW",
-    items: [{ label: "Dashboard", href: "/" }],
+    items: [
+      { label: "Dashboard", href: "/" },
+      { label: "Director (Chat)", href: "/chat" },
+    ],
   },
   {
     title: "AGENTS",
