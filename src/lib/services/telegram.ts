@@ -18,6 +18,12 @@ export interface SendOptions {
   parseMode?: "Markdown" | "HTML";
 }
 
+/**
+ * Send a Telegram message. F-028: retries up to 3x on transient failure
+ * (5xx, network errors). Returns true iff one of the attempts succeeds.
+ * Returns false silently when bot token / chat id is missing — callers
+ * already treat that as "not configured".
+ */
 export async function sendMessage(opts: SendOptions): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return false;
@@ -40,21 +46,33 @@ export async function sendMessage(opts: SendOptions): Promise<boolean> {
     };
   }
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      console.error(`telegram.sendMessage failed: ${res.status} ${await res.text()}`);
-      return false;
+  // Retry on 5xx + transient network errors. 4xx errors (bad chat_id,
+  // banned, parse error) won't recover with a retry — return false fast.
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return true;
+      const text = await res.text();
+      // 4xx: don't retry, the payload is wrong.
+      if (res.status < 500) {
+        console.error(`telegram.sendMessage 4xx (no retry): ${res.status} ${text}`);
+        return false;
+      }
+      console.warn(`telegram.sendMessage 5xx attempt ${attempt}: ${res.status} ${text}`);
+    } catch (e) {
+      console.warn(`telegram.sendMessage network error attempt ${attempt}:`, e);
     }
-    return true;
-  } catch (e) {
-    console.error("telegram.sendMessage error", e);
-    return false;
+    if (attempt < MAX_ATTEMPTS) {
+      // 250ms, 1s, 4s
+      await new Promise((r) => setTimeout(r, 250 * 4 ** (attempt - 1)));
+    }
   }
+  return false;
 }
 
 export async function answerCallbackQuery(callbackQueryId: string, text?: string) {

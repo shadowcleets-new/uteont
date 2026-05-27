@@ -59,6 +59,7 @@ function checkServiceAuth(req: NextRequest): NextResponse | null {
 
 const PUBLIC_PATHS = [
   "/login",
+  "/setup",   // F-016: one-time password URL flow (token-protected in the page itself)
   "/api/auth", // NextAuth endpoints (signin, callback, csrf, ...)
   "/api/health",
 ];

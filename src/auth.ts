@@ -24,6 +24,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           Google({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+            // If GOOGLE_HOSTED_DOMAIN is set, the OAuth consent screen
+            // is restricted to accounts in that domain. For consumer
+            // @gmail.com accounts leave it unset (allowlist still
+            // enforces the single-email rule in signIn callback).
+            ...(process.env.GOOGLE_HOSTED_DOMAIN
+              ? {
+                  authorization: {
+                    params: { hd: process.env.GOOGLE_HOSTED_DOMAIN },
+                  },
+                }
+              : {}),
           }),
         ]
       : []),
@@ -36,7 +47,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const username = String(creds?.username ?? "");
         const password = String(creds?.password ?? "");
         if (!username || !password) return null;
+
+        // F-009 + F-010: rate-limit + audit.
+        // Lazy imports to keep the module Edge-compatible at the top level.
+        const { isLockedOut, recordAttempt } = await import(
+          "@/lib/services/login-attempts"
+        );
+
+        if (await isLockedOut()) {
+          await recordAttempt(username, false);
+          // Returning null produces a generic CredentialsSignin error —
+          // we don't tell attackers they hit a rate limit (less info leak).
+          return null;
+        }
+
         const ok = await verifyCredentials(username, password);
+        await recordAttempt(username, ok);
         if (!ok) return null;
         return {
           id: "admin",

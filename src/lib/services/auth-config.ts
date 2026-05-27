@@ -11,6 +11,43 @@ import { authConfig, type AuthConfig } from "@/lib/db/schema";
 
 const ROW_ID = 1;
 
+// OWASP 2025 recommends bcrypt cost 12+ for new applications.
+const BCRYPT_COST = 12;
+
+// Password complexity policy. Enforced in setPassword().
+const PASSWORD_MIN_LENGTH = 12;
+const FORBIDDEN_PASSWORDS = new Set([
+  "password",
+  "password1",
+  "12345678",
+  "qwerty123",
+  "letmein123",
+  "admin1234",
+]);
+
+function validatePassword(password: string): string | null {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
+  }
+  if (password.length > 128) {
+    return "Password is too long (max 128).";
+  }
+  if (FORBIDDEN_PASSWORDS.has(password.toLowerCase())) {
+    return "Password is in the common-passwords block list.";
+  }
+  const checks = {
+    lowercase: /[a-z]/.test(password),
+    uppercase: /[A-Z]/.test(password),
+    digit: /[0-9]/.test(password),
+    symbol: /[^A-Za-z0-9]/.test(password),
+  };
+  const passed = Object.values(checks).filter(Boolean).length;
+  if (passed < 3) {
+    return "Password must contain at least 3 of: lowercase, uppercase, digit, symbol.";
+  }
+  return null;
+}
+
 export async function getAuthConfig(): Promise<AuthConfig | null> {
   try {
     const db = getDb();
@@ -20,7 +57,8 @@ export async function getAuthConfig(): Promise<AuthConfig | null> {
       .where(eq(authConfig.id, ROW_ID))
       .limit(1);
     return row ?? null;
-  } catch {
+  } catch (e) {
+    console.warn("[auth-config.getAuthConfig] DB error:", e);
     return null;
   }
 }
@@ -66,10 +104,9 @@ export async function setUsername(username: string): Promise<void> {
 }
 
 export async function setPassword(password: string): Promise<void> {
-  if (!password || password.length < 8) {
-    throw new Error("password must be at least 8 characters");
-  }
-  const hash = await bcrypt.hash(password, 10);
+  const error = validatePassword(password);
+  if (error) throw new Error(error);
+  const hash = await bcrypt.hash(password, BCRYPT_COST);
   await upsert({ passwordHash: hash });
 }
 
@@ -77,6 +114,38 @@ export async function setAllowedGoogleEmail(email: string): Promise<void> {
   const trimmed = email.trim().toLowerCase();
   if (!trimmed.includes("@")) throw new Error("not a valid email");
   await upsert({ allowedGoogleEmail: trimmed });
+}
+
+/**
+ * Get the admin chat ID — DB-stored value takes precedence over
+ * TELEGRAM_CHAT_ID env var (so it can be rotated without a redeploy).
+ */
+export async function getAdminChatId(): Promise<string | null> {
+  const cfg = await getAuthConfig();
+  if (cfg?.adminChatId) return cfg.adminChatId;
+  return process.env.TELEGRAM_CHAT_ID ?? null;
+}
+
+export async function setAdminChatId(chatId: string): Promise<void> {
+  if (!/^-?\d+$/.test(chatId)) throw new Error("admin chat id must be a numeric string");
+  const db = getDb();
+  const existing = await db
+    .select({ id: authConfig.id })
+    .from(authConfig)
+    .where(eq(authConfig.id, ROW_ID))
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(authConfig)
+      .set({ adminChatId: chatId, updatedAt: new Date() })
+      .where(eq(authConfig.id, ROW_ID));
+  } else {
+    await db.insert(authConfig).values({
+      id: ROW_ID,
+      adminChatId: chatId,
+      updatedAt: new Date(),
+    });
+  }
 }
 
 export async function clearAllCreds(): Promise<void> {

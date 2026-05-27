@@ -232,8 +232,34 @@ export const authConfig = pgTable("auth_config", {
   username:            text("username"),
   passwordHash:        text("password_hash"),
   allowedGoogleEmail:  text("allowed_google_email"),
+  // Admin chat ID for Telegram bot commands. Takes precedence over the
+  // TELEGRAM_CHAT_ID env var so it can be rotated without a redeploy.
+  adminChatId:         text("admin_chat_id"),
+  // One-time URL flow for setting password without putting it in chat.
+  // /setpassword-url generates a token + expiry; /setup/<token> consumes it.
+  setupToken:          text("setup_token"),
+  setupTokenExpiresAt: timestamp("setup_token_expires_at", { withTimezone: true }),
   updatedAt:           timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Audit + rate-limit source. Every credentials sign-in attempt
+// (success or fail) writes a row. A new attempt is rejected if
+// >= N failures in the trailing M minutes from any source.
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id:         serial("id").primaryKey(),
+    username:   text("username").notNull(),
+    success:    boolean("success").notNull(),
+    ipAddress:  text("ip_address"),
+    userAgent:  text("user_agent"),
+    createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byCreated: index("login_attempts_created_idx").on(t.createdAt),
+    byUsername: index("login_attempts_username_idx").on(t.username),
+  }),
+);
 
 export type Cycle = typeof cycles.$inferSelect;
 export type Run = typeof runs.$inferSelect;
@@ -246,3 +272,4 @@ export type Notification = typeof notifications.$inferSelect;
 export type AgentState = typeof agentState.$inferSelect;
 export type KvSetting = typeof kvSettings.$inferSelect;
 export type AuthConfig = typeof authConfig.$inferSelect;
+export type LoginAttempt = typeof loginAttempts.$inferSelect;

@@ -15,6 +15,13 @@
       "when": 1779879021062,
       "tag": "0001_violet_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779882613999,
+      "tag": "0002_sloppy_cloak",
+      "breakpoints": true
     }
   ]
 }

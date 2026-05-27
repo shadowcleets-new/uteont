@@ -70,7 +70,9 @@ export async function getAgentStats(agentKey: string): Promise<AgentStats> {
       .from(runs)
       .where(eq(runs.subjectKey, `agent.${agentKey}`));
     return aggregate(rs);
-  } catch {
+  } catch (e) {
+    // F-020: log the error instead of swallowing silently.
+    console.warn(`[stats.getAgentStats] DB error for agent=${agentKey}:`, e);
     return emptyStats();
   }
 }
@@ -87,7 +89,8 @@ export async function getAllAgentStats(): Promise<Record<string, AgentStats>> {
     const out: Record<string, AgentStats> = {};
     for (const [k, list] of Object.entries(grouped)) out[k] = aggregate(list);
     return out;
-  } catch {
+  } catch (e) {
+    console.warn("[stats.getAllAgentStats] DB error:", e);
     return {};
   }
 }

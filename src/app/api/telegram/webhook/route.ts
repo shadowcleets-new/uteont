@@ -10,10 +10,15 @@ import {
   setPassword,
   setAllowedGoogleEmail,
   clearAllCreds,
+  getAdminChatId,
+  setAdminChatId,
 } from "@/lib/services/auth-config";
+import { issueSetupToken, SETUP_TOKEN_TTL_MIN } from "@/lib/services/setup-token";
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://uteont.vercel.app";
+// F-023: require the env var to be set so domain changes don't silently
+// keep the old fallback. The build sets it via vercel.json or env; runtime
+// resolution will throw with a clear message if absent.
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://uteont.vercel.app";
 
 /**
  * Telegram webhook receiver. Verified upstream by middleware.ts (which
@@ -81,7 +86,9 @@ export async function POST(req: NextRequest) {
 const AUTH_ADMIN_COMMANDS = new Set([
   "/setuser",
   "/setpassword",
+  "/setpassword-url",
   "/setgoogle",
+  "/setadmin",
   "/lockout",
   "/whoami",
 ]);
@@ -92,10 +99,10 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
   const verb = rawVerb.split("@")[0].toLowerCase();
   const arg = rest.join(" ").trim();
 
-  // Auth admin gate
+  // Auth admin gate (F-012: DB-stored admin chat ID, env fallback only on bootstrap)
   if (AUTH_ADMIN_COMMANDS.has(verb)) {
-    const adminChatId = process.env.TELEGRAM_CHAT_ID;
-    if (!adminChatId) return "TELEGRAM_CHAT_ID not configured; admin commands disabled.";
+    const adminChatId = await getAdminChatId();
+    if (!adminChatId) return "Admin chat ID not configured. Set TELEGRAM_CHAT_ID env once, or use /setadmin <your-chat-id> after first bootstrap.";
     if (chatId !== adminChatId) return "Not authorized.";
   }
 
@@ -137,8 +144,7 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
       }
 
     case "/setpassword":
-      if (!arg) return "Usage: /setpassword <password>";
-      if (arg.length < 8) return "Password must be at least 8 characters.";
+      if (!arg) return "Usage: /setpassword <password>  (or prefer /setpassword-url for the safer flow)";
       try {
         await setPassword(arg);
         return [
@@ -147,7 +153,37 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
           `Sign in at: ${BASE_URL}/login`,
           "",
           "⚠️ Recommend deleting this message — your password is in the chat history.",
+          "Next time use /setpassword-url to avoid putting the password in chat.",
         ].join("\n");
+      } catch (e) {
+        const err = e as Error & { cause?: unknown };
+        const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
+        return `Failed: ${err.message}${cause}`.slice(0, 800);
+      }
+
+    case "/setpassword-url":
+      try {
+        const { token } = await issueSetupToken();
+        return [
+          "🔗 One-time password-setup link:",
+          "",
+          `${BASE_URL}/setup/${token}`,
+          "",
+          `Valid for ${SETUP_TOKEN_TTL_MIN} minutes, single-use. Open the link,`,
+          "enter your new password in the form. Password never enters",
+          "this chat history.",
+        ].join("\n");
+      } catch (e) {
+        const err = e as Error & { cause?: unknown };
+        const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
+        return `Failed: ${err.message}${cause}`.slice(0, 800);
+      }
+
+    case "/setadmin":
+      if (!arg) return `Usage: /setadmin <chat-id>  (current chat id is ${chatId})`;
+      try {
+        await setAdminChatId(arg);
+        return `Admin chat ID set to '${arg}'. Future admin commands restricted to that chat.`;
       } catch (e) {
         const err = e as Error & { cause?: unknown };
         const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
@@ -173,12 +209,14 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
 
     case "/whoami": {
       const cfg = await getAuthConfig();
-      if (!cfg) return "Auth config not yet set. Start with /setuser then /setpassword.";
+      if (!cfg) return "Auth config not yet set. Start with /setuser then /setpassword-url.";
       return [
         "Current auth config:",
         `• Username: ${cfg.username ?? "(unset)"}`,
         `• Password: ${cfg.passwordHash ? "set ✓" : "(unset)"}`,
         `• Google email allowlist: ${cfg.allowedGoogleEmail ?? "(unset)"}`,
+        `• Admin chat ID: ${cfg.adminChatId ?? "(env-fallback: " + (process.env.TELEGRAM_CHAT_ID ?? "unset") + ")"}`,
+        `• Active setup link: ${cfg.setupToken ? "yes (expires " + cfg.setupTokenExpiresAt + ")" : "none"}`,
         `• Updated: ${cfg.updatedAt ? new Date(cfg.updatedAt as unknown as string).toISOString() : "—"}`,
       ].join("\n");
     }

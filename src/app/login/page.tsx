@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { LoginForm } from "./form";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Sign in — UTEONT" };
+// Generic title — don't reveal product name to crawlers / tab thumbnails.
+export const metadata = { title: "Sign in" };
 
 export default async function LoginPage() {
   const session = await auth();

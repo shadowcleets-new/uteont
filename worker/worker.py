@@ -160,6 +160,13 @@ HANDLERS: dict[str, Callable[[dict], dict]] = {
 # --- main loop -------------------------------------------------------
 
 _stop = False
+_health_state: dict = {
+    "last_poll_at": None,
+    "last_claim_at": None,
+    "jobs_completed": 0,
+    "jobs_failed": 0,
+    "started_at": None,
+}
 
 
 def _on_signal(signum, _frame):
@@ -168,7 +175,42 @@ def _on_signal(signum, _frame):
     _stop = True
 
 
+def _start_health_server(port: int = 8080) -> None:
+    """F-024: tiny HTTP server so Railway / external monitors can detect
+    worker death. Returns 200 + JSON snapshot of internal counters."""
+    import http.server
+    import json
+    import socketserver
+    import threading
+    from datetime import datetime, timezone
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_a, **_kw):  # silence default access log
+            pass
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.end_headers()
+                snap = dict(_health_state)
+                snap["now"] = datetime.now(timezone.utc).isoformat()
+                self.wfile.write(json.dumps(snap).encode())
+                return
+            self.send_response(404); self.end_headers()
+
+    def _run():
+        try:
+            with socketserver.TCPServer(("0.0.0.0", port), _Handler) as srv:
+                log.info("health server listening on :%d/health", port)
+                srv.serve_forever()
+        except Exception as e:
+            log.warning("health server failed to start: %s", e)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def main() -> int:
+    from datetime import datetime, timezone
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -176,6 +218,10 @@ def main() -> int:
     signal.signal(signal.SIGINT, _on_signal)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _on_signal)
+
+    _health_state["started_at"] = datetime.now(timezone.utc).isoformat()
+    if os.environ.get("WORKER_HEALTH_PORT", "8080"):
+        _start_health_server(int(os.environ.get("WORKER_HEALTH_PORT", "8080")))
 
     client = from_env()
     agent_keys = [k.strip() for k in
@@ -185,6 +231,8 @@ def main() -> int:
              client.worker_id, agent_keys, POLL_INTERVAL)
 
     while not _stop:
+        from datetime import datetime, timezone
+        _health_state["last_poll_at"] = datetime.now(timezone.utc).isoformat()
         try:
             job = client.claim_job(agent_keys)
         except ApiError as e:
@@ -199,7 +247,9 @@ def main() -> int:
         job_id = job["id"]
         agent_key = job["agentKey"]
         payload = job.get("payload") or {}
-        log.info("claimed job %d for agent='%s'", job_id, agent_key)
+        attempts = int(job.get("attempts") or 0)
+        log.info("claimed job %d for agent='%s' (attempt %d)", job_id, agent_key, attempts)
+        _health_state["last_claim_at"] = datetime.now(timezone.utc).isoformat()
 
         handler = HANDLERS.get(agent_key)
         if not handler:
@@ -208,18 +258,30 @@ def main() -> int:
                 client.fail_job(job_id, f"no handler for '{agent_key}'", retry=False)
             except ApiError as e:
                 log.error("fail report failed: %s", e)
+            _health_state["jobs_failed"] += 1
             continue
 
         try:
             result = handler(payload)
             client.complete_job(job_id, result)
             log.info("job %d done", job_id)
+            _health_state["jobs_completed"] += 1
         except Exception as e:
             log.exception("job %d failed", job_id)
+            _health_state["jobs_failed"] += 1
+            # F-025: exponential backoff before re-claiming on transient
+            # failures. attempts=N → wait 2^N * 5s (capped at 5 min) so
+            # an overloaded downstream isn't hammered.
+            backoff_s = min(300, 5 * (2 ** attempts))
+            log.info("backing off %ds before next poll (attempt was %d)", backoff_s, attempts)
             try:
                 client.fail_job(job_id, f"{type(e).__name__}: {e}", retry=True)
             except ApiError as ae:
                 log.error("fail report failed: %s", ae)
+            # Sleep the exponential backoff so the next claim doesn't
+            # immediately re-pull this job (it's now back to status=queued
+            # via fail_job retry=True).
+            time.sleep(backoff_s)
 
     log.info("worker exiting cleanly")
     return 0

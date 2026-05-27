@@ -1,0 +1,19 @@
+# Default: text files use LF, eliminating Git's CRLF normalization warnings
+# on Windows checkouts. Binary files stay binary.
+* text=auto eol=lf
+
+# Explicit binary types (no diff, no merge)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.woff binary
+*.woff2 binary
+
+# Shell scripts stay LF even on Windows
+*.sh text eol=lf
+*.bat text eol=crlf
