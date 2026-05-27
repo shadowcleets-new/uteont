@@ -4,6 +4,13 @@ import { getDb } from "@/lib/db/client";
 import { keywords } from "@/lib/db/schema";
 import { answerCallbackQuery, sendMessage } from "@/lib/services/telegram";
 import { recordApproval } from "@/lib/services/approvals";
+import {
+  getAuthConfig,
+  setUsername,
+  setPassword,
+  setAllowedGoogleEmail,
+  clearAllCreds,
+} from "@/lib/services/auth-config";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://uteont.vercel.app";
@@ -51,30 +58,135 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, handled: "callback_query", data, ackText });
   }
 
-  // Plain text message — currently just acknowledge
+  // Plain text message — command dispatcher
   const msg = update.message as Record<string, unknown> | undefined;
   if (msg) {
     const chat = msg.chat as Record<string, unknown> | undefined;
     const chatId = chat ? String(chat.id) : undefined;
-    const text = String(msg.text ?? "");
+    const text = String(msg.text ?? "").trim();
     if (chatId && text.startsWith("/")) {
-      await sendMessage({
-        chatId,
-        text:
-          `Available commands:\n` +
-          `/status — health check\n` +
-          `/keywords — link to keywords page\n` +
-          `(Use inline buttons on notifications to approve / shelve.)`,
-      });
-      if (text.startsWith("/status")) {
-        await sendMessage({ chatId, text: `${BASE_URL}/api/health` });
-      } else if (text.startsWith("/keywords")) {
-        await sendMessage({ chatId, text: `${BASE_URL}/keywords` });
-      }
+      const reply = await handleCommand(text, chatId);
+      if (reply) await sendMessage({ chatId, text: reply });
     }
   }
 
   return NextResponse.json({ ok: true, handled: "ignored" });
+}
+
+// ------------------------------------------------------------------------
+// Command handler — credential-management commands are restricted to the
+// chat_id named in TELEGRAM_CHAT_ID env (only YOU can change auth creds).
+// ------------------------------------------------------------------------
+
+const AUTH_ADMIN_COMMANDS = new Set([
+  "/setuser",
+  "/setpassword",
+  "/setgoogle",
+  "/lockout",
+  "/whoami",
+]);
+
+async function handleCommand(text: string, chatId: string): Promise<string | null> {
+  // Strip optional @botname suffix that Telegram sometimes appends
+  const [rawVerb, ...rest] = text.split(/\s+/);
+  const verb = rawVerb.split("@")[0].toLowerCase();
+  const arg = rest.join(" ").trim();
+
+  // Auth admin gate
+  if (AUTH_ADMIN_COMMANDS.has(verb)) {
+    const adminChatId = process.env.TELEGRAM_CHAT_ID;
+    if (!adminChatId) return "TELEGRAM_CHAT_ID not configured; admin commands disabled.";
+    if (chatId !== adminChatId) return "Not authorized.";
+  }
+
+  switch (verb) {
+    case "/start":
+    case "/help":
+      return [
+        "UTEONT bot commands:",
+        "",
+        "📊 Status",
+        "/status — health endpoint URL",
+        "/keywords — keywords page URL",
+        "",
+        "🔐 Auth (admin only)",
+        "/setuser <username>",
+        "/setpassword <password>",
+        "/setgoogle <email>",
+        "/whoami — show current auth config (no secrets)",
+        "/lockout — clear all credentials (emergency)",
+        "",
+        "Approvals run via inline buttons on notifications.",
+      ].join("\n");
+
+    case "/status":
+      return `${BASE_URL}/api/health`;
+
+    case "/keywords":
+      return `${BASE_URL}/keywords`;
+
+    case "/setuser":
+      if (!arg) return "Usage: /setuser <username>";
+      try {
+        await setUsername(arg);
+        return `Username set to '${arg}'. Use /setpassword next.`;
+      } catch (e) {
+        return `Failed: ${(e as Error).message}`;
+      }
+
+    case "/setpassword":
+      if (!arg) return "Usage: /setpassword <password>";
+      if (arg.length < 8) return "Password must be at least 8 characters.";
+      try {
+        await setPassword(arg);
+        return [
+          "Password updated.",
+          "",
+          `Sign in at: ${BASE_URL}/login`,
+          "",
+          "⚠️ Recommend deleting this message — your password is in the chat history.",
+        ].join("\n");
+      } catch (e) {
+        return `Failed: ${(e as Error).message}`;
+      }
+
+    case "/setgoogle":
+      if (!arg) return "Usage: /setgoogle <email>";
+      try {
+        await setAllowedGoogleEmail(arg);
+        const hasOAuth = !!(
+          process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+        );
+        const note = hasOAuth
+          ? ""
+          : "\n\n⚠️ Google OAuth not yet configured. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in Vercel env to enable.";
+        return `Google sign-in allowlist set to '${arg}'.${note}`;
+      } catch (e) {
+        return `Failed: ${(e as Error).message}`;
+      }
+
+    case "/whoami": {
+      const cfg = await getAuthConfig();
+      if (!cfg) return "Auth config not yet set. Start with /setuser then /setpassword.";
+      return [
+        "Current auth config:",
+        `• Username: ${cfg.username ?? "(unset)"}`,
+        `• Password: ${cfg.passwordHash ? "set ✓" : "(unset)"}`,
+        `• Google email allowlist: ${cfg.allowedGoogleEmail ?? "(unset)"}`,
+        `• Updated: ${cfg.updatedAt ? new Date(cfg.updatedAt as unknown as string).toISOString() : "—"}`,
+      ].join("\n");
+    }
+
+    case "/lockout":
+      if (arg.toUpperCase() !== "CONFIRM") {
+        return "This clears ALL credentials and locks out the web UI. To proceed, run: /lockout CONFIRM";
+      }
+      await clearAllCreds();
+      return "All credentials cleared. Web UI is now locked. Use /setuser + /setpassword to restore access.";
+
+    default:
+      return null; // ignore unknown commands silently
+  }
 }
 
 // ------------------------------------------------------------------------

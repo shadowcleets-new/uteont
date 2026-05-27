@@ -224,6 +224,17 @@ export const kvSettings = pgTable("kv_settings", {
   updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Single-row table (id=1 always). Holds the user-facing auth credentials
+// so they can be rotated via Telegram commands without redeploys.
+// All fields nullable: empty DB → no login possible (set via Telegram first).
+export const authConfig = pgTable("auth_config", {
+  id:                  serial("id").primaryKey(),
+  username:            text("username"),
+  passwordHash:        text("password_hash"),
+  allowedGoogleEmail:  text("allowed_google_email"),
+  updatedAt:           timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Cycle = typeof cycles.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
@@ -234,3 +245,4 @@ export type Approval = typeof approvals.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type AgentState = typeof agentState.$inferSelect;
 export type KvSetting = typeof kvSettings.$inferSelect;
+export type AuthConfig = typeof authConfig.$inferSelect;
