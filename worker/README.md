@@ -49,6 +49,45 @@ Pick one when the worker.py poller lands. For now this directory holds
 the agent code so it can be tested locally and is committed to the same
 repo as the frontend.
 
+## Job payload — `site` snapshot
+
+As of the site-context-foundation rollout, every job claimed from
+`/api/jobs/claim` includes a `site` block in its `payload`. The
+snapshot is built at enqueue time by either the agent-run API
+(`POST /api/agents/[key]/run`) or the Director Agent
+(`src/lib/services/director.ts`); both routes embed the exact same
+ten-field shape so worker handlers can rely on it.
+
+```json
+{
+  "site": {
+    "id": 42,
+    "key": "tonyspizza",
+    "name": "Tony's Pizza",
+    "domain": "https://tonyspizza.com",
+    "locale": "en-US",
+    "niche": "NYC pizza & Italian-American food",
+    "audience": "home cooks + NYC tourists",
+    "voiceGuide": "Warm, slightly nostalgic, food-first; never corporate",
+    "contentPillars": ["recipes", "neighborhood history"],
+    "bannedPhrases": ["delicious", "mouth-watering"]
+  }
+  // ... other agent-specific fields the handler already consumes
+}
+```
+
+Handlers should read `payload.site` (when present) and weave the
+brand voice, niche, and banned phrases into their model prompts.
+The foundation rollout does **not** change any worker handler — it
+only ensures the data is available. Per-agent prompt updates that
+actually consume `voiceGuide` / `bannedPhrases` / `contentPillars`
+ship as part of each agent's own follow-up spec.
+
+No encrypted integration credentials ever appear in the payload.
+If a worker needs platform credentials (publishing, analytics, etc.),
+it will fetch them from a future authed endpoint at the time of
+the operation — not via the payload.
+
 ## Required environment
 
 ```env
