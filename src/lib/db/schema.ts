@@ -24,7 +24,59 @@ import {
   real,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+export const sites = pgTable(
+  "sites",
+  {
+    id:                serial("id").primaryKey(),
+    key:               text("key").notNull(),
+    name:              text("name").notNull(),
+    domain:            text("domain").notNull(),
+    locale:            text("locale").notNull(),
+    niche:             text("niche"),
+    audience:          text("audience"),
+    voiceGuide:        text("voice_guide"),
+    contentPillars:    jsonb("content_pillars").$type<string[]>().notNull().default([]),
+    bannedPhrases:     jsonb("banned_phrases").$type<string[]>().notNull().default([]),
+    defaultCategories: jsonb("default_categories").$type<string[]>().notNull().default([]),
+    cmsPlatform:       text("cms_platform").notNull().default("none"),
+    sitemapUrl:        text("sitemap_url"),
+    gscPropertyId:     text("gsc_property_id"),
+    ga4PropertyId:     text("ga4_property_id"),
+    status:            text("status").notNull().default("active"),
+    createdAt:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:         timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byKey:    uniqueIndex("sites_key_unique_idx").on(t.key),
+    byStatus: index("sites_status_idx").on(t.status),
+  }),
+);
+
+export const siteIntegrations = pgTable(
+  "site_integrations",
+  {
+    id:              serial("id").primaryKey(),
+    siteId:          integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    kind:            text("kind").notNull(),
+    label:           text("label"),
+    config:          text("config").notNull(),   // base64 ciphertext
+    configIv:        text("config_iv").notNull(),
+    configTag:       text("config_tag").notNull(),
+    status:          text("status").notNull().default("unverified"),
+    lastVerifiedAt:  timestamp("last_verified_at", { withTimezone: true }),
+    lastError:       text("last_error"),
+    createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite: index("site_integrations_site_idx").on(t.siteId),
+    byKind: index("site_integrations_kind_idx").on(t.siteId, t.kind),
+    byStatus: index("site_integrations_status_idx").on(t.status),
+  }),
+);
 
 export const cycles = pgTable(
   "cycles",
@@ -34,11 +86,13 @@ export const cycles = pgTable(
     seedTerms:  jsonb("seed_terms").$type<string[]>().notNull().default([]),
     status:     text("status").notNull().default("researching"),
       // researching | ideas-ready | drafting | qa | staged | published | archived
+    siteId:     integer("site_id").notNull().references(() => sites.id),
     createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     byStatus: index("cycles_status_idx").on(t.status),
+    bySite:   index("cycles_site_idx").on(t.siteId),
   }),
 );
 
@@ -51,6 +105,7 @@ export const runs = pgTable(
     action:      text("action").notNull(),
     cycleId:     integer("cycle_id").references(() => cycles.id),
     jobId:       integer("job_id"),
+    siteId:      integer("site_id").notNull().references(() => sites.id),
     startedAt:   timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt:  timestamp("finished_at", { withTimezone: true }),
     status:      text("status").notNull().default("running"),
@@ -61,6 +116,7 @@ export const runs = pgTable(
     bySubject: index("runs_subject_idx").on(t.subjectKey),
     byStarted: index("runs_started_idx").on(t.startedAt.desc()),
     byCycle:   index("runs_cycle_idx").on(t.cycleId),
+    bySite:    index("runs_site_idx").on(t.siteId),
   }),
 );
 
@@ -81,12 +137,14 @@ export const jobs = pgTable(
     attempts:     integer("attempts").notNull().default(0),
     maxAttempts:  integer("max_attempts").notNull().default(3),
     priority:     integer("priority").notNull().default(0),
+    siteId:       integer("site_id").notNull().references(() => sites.id),
     createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     byStatus: index("jobs_status_idx").on(t.status),
     byAgent:  index("jobs_agent_idx").on(t.agentKey),
     byCycle:  index("jobs_cycle_idx").on(t.cycleId),
+    bySite:   index("jobs_site_idx").on(t.siteId),
   }),
 );
 
@@ -105,12 +163,14 @@ export const keywords = pgTable(
     shelvedReason:         text("shelved_reason"),
     approvedAt:            timestamp("approved_at", { withTimezone: true }),
     runId:                 integer("run_id").references(() => runs.id),
+    siteId:                integer("site_id").notNull().references(() => sites.id),
     createdAt:             timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     byCycle:    index("keywords_cycle_idx").on(t.cycleId),
     byStatus:   index("keywords_status_idx").on(t.status),
     byPriority: index("keywords_priority_idx").on(t.priorityRank),
+    bySite:     index("keywords_site_idx").on(t.siteId),
   }),
 );
 
@@ -157,6 +217,7 @@ export const articles = pgTable(
     publishedAt:      timestamp("published_at", { withTimezone: true }),
     cmsUrl:           text("cms_url"),
     runId:            integer("run_id").references(() => runs.id),
+    siteId:           integer("site_id").notNull().references(() => sites.id),
     createdAt:        timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt:        timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -164,6 +225,7 @@ export const articles = pgTable(
     byCycle:   index("articles_cycle_idx").on(t.cycleId),
     byStatus:  index("articles_status_idx").on(t.status),
     bySlug:    index("articles_slug_idx").on(t.slug),
+    bySite:    index("articles_site_idx").on(t.siteId),
   }),
 );
 
@@ -275,6 +337,7 @@ export const conversations = pgTable(
     status:        text("status").notNull().default("active"),  // active | paused | completed | archived
     planApproved:  boolean("plan_approved").notNull().default(false),
     surface:       text("surface").notNull().default("web"),  // web | telegram | both
+    siteId:        integer("site_id").references(() => sites.id),
     createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt:     timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
@@ -282,6 +345,7 @@ export const conversations = pgTable(
   (t) => ({
     byStatus:        index("conversations_status_idx").on(t.status),
     byLastMessage:   index("conversations_last_message_idx").on(t.lastMessageAt),
+    bySite:          index("conversations_site_idx").on(t.siteId),
   }),
 );
 
@@ -307,6 +371,8 @@ export const messages = pgTable(
   }),
 );
 
+export type Site = typeof sites.$inferSelect;
+export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
