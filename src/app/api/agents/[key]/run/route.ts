@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RunAgentRequest } from "@/lib/validation/schemas";
 import { runAgent } from "@/lib/services/agents";
+import { getSiteById } from "@/lib/services/sites";
 
 interface RouteContext {
   params: Promise<{ key: string }>;
@@ -15,10 +16,31 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "invalid body", detail: String(e) }, { status: 400 });
   }
 
+  const site = await getSiteById(parsed.siteId);
+  if (!site) {
+    return NextResponse.json({ error: "site_not_found" }, { status: 404 });
+  }
+
+  const siteSnapshot = {
+    id: site.id,
+    key: site.key,
+    name: site.name,
+    domain: site.domain,
+    locale: site.locale,
+    niche: site.niche,
+    audience: site.audience,
+    voiceGuide: site.voiceGuide,
+    contentPillars: site.contentPillars,
+    bannedPhrases: site.bannedPhrases,
+  };
+
+  const enhancedPayload = { ...(parsed.payload ?? {}), site: siteSnapshot };
+
   try {
     const result = await runAgent({
       agentKey: key,
-      payload: parsed.payload,
+      siteId: site.id,
+      payload: enhancedPayload,
       cycleId: parsed.cycleId,
     });
     return NextResponse.json(result);

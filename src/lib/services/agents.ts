@@ -18,6 +18,7 @@ export interface RunAgentResult {
 
 export async function runAgent(opts: {
   agentKey: string;
+  siteId: number;       // required — propagated to runs + jobs
   payload?: Record<string, unknown>;
   cycleId?: number;
 }): Promise<RunAgentResult> {
@@ -32,6 +33,7 @@ export async function runAgent(opts: {
       subjectKey: `agent.${opts.agentKey}`,
       category: "agent",
       action: spec.name,
+      siteId: opts.siteId,
       cycleId: opts.cycleId,
     });
     try {
@@ -49,6 +51,7 @@ export async function runAgent(opts: {
   // worker runtime — enqueue
   const job = await enqueueJob({
     agentKey: opts.agentKey,
+    siteId: opts.siteId,
     payload,
     cycleId: opts.cycleId,
   });

@@ -12,11 +12,14 @@ import { runAgent } from "@/lib/services/agents";
 export async function POST(req: NextRequest) {
   const form = await req.formData();
   const agentKey = String(form.get("agentKey") || "");
+  const siteIdRaw = form.get("siteId");
+  // Fall back to site id=1 (the default site) when the form doesn't supply siteId.
+  const siteId = siteIdRaw ? Number(siteIdRaw) : 1;
   if (!agentKey) {
     return NextResponse.json({ error: "agentKey required" }, { status: 400 });
   }
   try {
-    await runAgent({ agentKey });
+    await runAgent({ agentKey, siteId });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const url = new URL(`/agents/${agentKey}?error=${encodeURIComponent(msg)}`, req.url);

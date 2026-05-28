@@ -9,10 +9,13 @@ import { startRun, finishRun } from "@/lib/services/runs";
  * run row so you can see the cron is firing.
  */
 export async function GET() {
+  // Site id=1 is the default site; cron runs are not scoped to a single site
+  // in this version — the cron always runs against the default.
   const run = await startRun({
     subjectKey: "agent.performance-tracking",
     category: "agent",
     action: "daily-pull",
+    siteId: 1,
   }).catch(() => null);
 
   // TODO: GSC API call when oauth configured.

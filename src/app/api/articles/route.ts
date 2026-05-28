@@ -6,11 +6,13 @@ import { articles } from "@/lib/db/schema";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const cycleId = searchParams.get("cycleId");
+  const siteId = searchParams.get("siteId");
   const status = searchParams.get("status");
   try {
     const db = getDb();
     const conditions = [];
     if (cycleId) conditions.push(eq(articles.cycleId, Number(cycleId)));
+    if (siteId) conditions.push(eq(articles.siteId, Number(siteId)));
     if (status) conditions.push(eq(articles.status, status));
     const rows = await db
       .select()

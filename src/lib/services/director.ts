@@ -235,8 +235,12 @@ export async function runDirectorTurn(
     for (const action of parsed.actions) {
       const agentKey = TOOL_TO_AGENT[action.tool];
       if (!agentKey) continue;
+      // Use the conversation's siteId if set; fall back to site id=1 (default)
+      // until Task 8 wires the Director API to always pass a siteId.
+      const siteId = input.conversation.siteId ?? 1;
       const job = await enqueueJob({
         agentKey,
+        siteId,
         payload: {
           ...action.args,
           _directorContext: { conversationId: input.conversation.id },

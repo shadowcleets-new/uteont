@@ -5,6 +5,7 @@ import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
 
 export interface EnqueueJobInput {
   agentKey: string;
+  siteId: number;       // required — must match a sites.id row
   payload: Record<string, unknown>;
   cycleId?: number;
   priority?: number;
@@ -12,11 +13,15 @@ export interface EnqueueJobInput {
 }
 
 export async function enqueueJob(input: EnqueueJobInput) {
+  if (!input.siteId) {
+    throw new Error("enqueueJob: siteId is required");
+  }
   const db = getDb();
   const [row] = await db
     .insert(jobs)
     .values({
       agentKey: input.agentKey,
+      siteId: input.siteId,
       payload: input.payload,
       cycleId: input.cycleId,
       priority: input.priority ?? 0,
@@ -103,6 +108,7 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
       subjectKey: `agent.${job.agentKey}`,
       category: "agent",
       action: `worker:${job.agentKey}`,
+      siteId: job.siteId,
       cycleId: job.cycleId,
       jobId: job.id,
       startedAt,
@@ -116,11 +122,11 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
   //    must not roll back the runs row or the job 'done' status).
   try {
     if (job.agentKey === "research") {
-      await persistResearchKeywords(job.cycleId, run.id, result);
+      await persistResearchKeywords(job.siteId, job.cycleId, run.id, result);
     } else if (job.agentKey === "idea-generation") {
       await persistIdeas(job.cycleId, result);
     } else if (job.agentKey === "content-writing") {
-      await persistArticle(job.cycleId, job.payload as Record<string, unknown>, result);
+      await persistArticle(job.siteId, job.cycleId, job.payload as Record<string, unknown>, result);
     }
     // outreach/backlink: result captured in runs.result_json; no typed table v1.
   } catch (e) {
@@ -155,6 +161,7 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
 }
 
 async function persistResearchKeywords(
+  siteId: number,
   cycleId: number | null,
   runId: number,
   result: Record<string, unknown>,
@@ -172,6 +179,7 @@ async function persistResearchKeywords(
   const rows = (arr as Incoming[])
     .filter((k) => k && typeof k.keyword === "string")
     .map((k) => ({
+      siteId,
       cycleId: cycleId ?? null,
       keyword: k.keyword,
       searchVolumeEstimate: Number(k.search_volume_estimate ?? 0),
@@ -221,6 +229,7 @@ async function persistIdeas(
 }
 
 async function persistArticle(
+  siteId: number,
   cycleId: number | null,
   payload: Record<string, unknown>,
   result: Record<string, unknown>,
@@ -230,6 +239,7 @@ async function persistArticle(
   if (!title || !body) return;
   const db = getDb();
   await db.insert(articles).values({
+    siteId,
     cycleId: cycleId ?? null,
     ideaId: typeof payload.ideaId === "number" ? (payload.ideaId as number) : null,
     title,
@@ -264,6 +274,7 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       subjectKey: `agent.${row.agentKey}`,
       category: "agent",
       action: `worker:${row.agentKey}`,
+      siteId: row.siteId,
       cycleId: row.cycleId,
       jobId: row.id,
       startedAt,

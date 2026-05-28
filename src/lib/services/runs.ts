@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { runs } from "@/lib/db/schema";
 
@@ -6,11 +6,15 @@ export interface StartRunInput {
   subjectKey: string;
   category: "agent" | "infra";
   action: string;
+  siteId: number;       // required — runs.siteId is NOT NULL
   cycleId?: number;
   jobId?: number;
 }
 
 export async function startRun(input: StartRunInput) {
+  if (!input.siteId) {
+    throw new Error("startRun: siteId is required");
+  }
   const db = getDb();
   const [row] = await db
     .insert(runs)
@@ -18,6 +22,7 @@ export async function startRun(input: StartRunInput) {
       subjectKey: input.subjectKey,
       category: input.category,
       action: input.action,
+      siteId: input.siteId,
       cycleId: input.cycleId,
       jobId: input.jobId,
       status: "running",
@@ -46,17 +51,21 @@ export async function finishRun(input: FinishRunInput) {
     .where(eq(runs.id, input.runId));
 }
 
-export async function listRuns(subjectKey?: string, limit = 50) {
+export async function listRuns(
+  subjectKey?: string,
+  limit = 50,
+  opts: { siteId?: number } = {},
+) {
   const db = getDb();
-  if (subjectKey) {
-    return db
-      .select()
-      .from(runs)
-      .where(eq(runs.subjectKey, subjectKey))
-      .orderBy(desc(runs.id))
-      .limit(limit);
-  }
-  return db.select().from(runs).orderBy(desc(runs.id)).limit(limit);
+  const conditions = [];
+  if (subjectKey) conditions.push(eq(runs.subjectKey, subjectKey));
+  if (opts.siteId) conditions.push(eq(runs.siteId, opts.siteId));
+  return db
+    .select()
+    .from(runs)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(runs.id))
+    .limit(limit);
 }
 
 export async function getRun(id: number) {

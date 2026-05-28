@@ -1,19 +1,30 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { cycles } from "@/lib/db/schema";
 
-export async function createCycle(goal: string, seedTerms: string[]) {
+export async function createCycle(goal: string, seedTerms: string[], siteId: number) {
+  if (!siteId) {
+    throw new Error("createCycle: siteId is required");
+  }
   const db = getDb();
   const [row] = await db
     .insert(cycles)
-    .values({ goal, seedTerms, status: "researching" })
+    .values({ goal, seedTerms, siteId, status: "researching" })
     .returning();
   return row;
 }
 
-export async function listCycles(limit = 50) {
+export async function listCycles(opts: { limit?: number; siteId?: number } = {}) {
   const db = getDb();
-  return db.select().from(cycles).orderBy(desc(cycles.id)).limit(limit);
+  const { limit = 50, siteId } = opts;
+  const conditions = [];
+  if (siteId) conditions.push(eq(cycles.siteId, siteId));
+  return db
+    .select()
+    .from(cycles)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(cycles.id))
+    .limit(limit);
 }
 
 export async function getCycle(id: number) {

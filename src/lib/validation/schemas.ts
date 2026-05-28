@@ -15,6 +15,7 @@ export const PaginationQuery = z.object({
 // --- Agents -------------------------------------------------------------
 
 export const RunAgentRequest = z.object({
+  siteId: z.number().int().positive(),
   cycleId: z.number().int().positive().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
 });
@@ -24,6 +25,7 @@ export const RunAgentRequest = z.object({
 export const CreateCycleRequest = z.object({
   goal: z.string().min(1).max(2000),
   seedTerms: z.array(z.string().min(1)).min(1).max(50),
+  siteId: z.number().int().positive(),
 });
 
 export const UpdateCycleRequest = z.object({

@@ -2,10 +2,11 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { keywords } from "@/lib/db/schema";
 
-export async function listKeywords(opts: { cycleId?: number; status?: string; limit?: number } = {}) {
+export async function listKeywords(opts: { cycleId?: number; siteId?: number; status?: string; limit?: number } = {}) {
   const db = getDb();
   const conditions = [];
   if (opts.cycleId) conditions.push(eq(keywords.cycleId, opts.cycleId));
+  if (opts.siteId) conditions.push(eq(keywords.siteId, opts.siteId));
   if (opts.status) conditions.push(eq(keywords.status, opts.status));
   return db
     .select()
@@ -31,6 +32,7 @@ export async function updateKeyword(
 }
 
 export async function bulkInsertKeywords(
+  siteId: number,
   cycleId: number,
   runId: number,
   items: Array<{
@@ -45,6 +47,6 @@ export async function bulkInsertKeywords(
   const db = getDb();
   return db
     .insert(keywords)
-    .values(items.map((it) => ({ ...it, cycleId, runId, status: "researched" })))
+    .values(items.map((it) => ({ ...it, siteId, cycleId, runId, status: "researched" })))
     .returning();
 }
