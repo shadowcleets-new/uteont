@@ -9,6 +9,13 @@ import type {
 export type IntegrationListItem = Omit<SiteIntegration, "config" | "configIv" | "configTag">;
 export type IntegrationWithPlain = SiteIntegration & { configPlain: Record<string, unknown> };
 
+export class IntegrationNotFoundError extends Error {
+  constructor(id: number) {
+    super(`Integration not found: id=${id}`);
+    this.name = "IntegrationNotFoundError";
+  }
+}
+
 function toListItem(row: SiteIntegration): IntegrationListItem {
   // Strip the encrypted-blob columns; consumers should never see them.
   const { config: _c, configIv: _iv, configTag: _t, ...rest } = row;
@@ -73,6 +80,7 @@ export async function updateIntegration(
     .set(patch)
     .where(eq(siteIntegrations.id, id))
     .returning();
+  if (!row) throw new IntegrationNotFoundError(id);
   return toListItem(row);
 }
 
