@@ -82,7 +82,7 @@ export async function listConversations(
 export async function updateConversation(
   id: number,
   patch: Partial<
-    Pick<Conversation, "title" | "goal" | "status" | "planApproved" | "surface">
+    Pick<Conversation, "title" | "goal" | "status" | "planApproved" | "surface" | "siteId">
   >,
 ): Promise<void> {
   const db = getDb();

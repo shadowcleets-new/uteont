@@ -4,6 +4,12 @@ import { getDb } from "@/lib/db/client";
 import { keywords } from "@/lib/db/schema";
 import { answerCallbackQuery, sendMessage } from "@/lib/services/telegram";
 import { recordApproval } from "@/lib/services/approvals";
+import { listSites, getSiteByKey } from "@/lib/services/sites";
+import {
+  getActiveTelegramConversation,
+  createConversation,
+  updateConversation,
+} from "@/lib/services/conversations";
 import {
   getAuthConfig,
   setUsername,
@@ -100,11 +106,7 @@ export async function POST(req: NextRequest) {
 
 async function routeToDirector(chatId: string, text: string): Promise<void> {
   const { runDirectorTurn } = await import("@/lib/services/director");
-  const {
-    getActiveTelegramConversation,
-    createConversation,
-    getMessages,
-  } = await import("@/lib/services/conversations");
+  const { getMessages } = await import("@/lib/services/conversations");
 
   let conversation = await getActiveTelegramConversation();
   // If no active Telegram conversation, OR the previous one is older than
@@ -174,6 +176,10 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
         "/status — health endpoint URL",
         "/keywords — keywords page URL",
         "",
+        "🌐 Sites",
+        "/sites — list available sites",
+        "/site <key> — pin active conversation to a site",
+        "",
         "🔐 Auth (admin only)",
         "/setuser <username>",
         "/setpassword <password>",
@@ -183,6 +189,27 @@ async function handleCommand(text: string, chatId: string): Promise<string | nul
         "",
         "Approvals run via inline buttons on notifications.",
       ].join("\n");
+
+    case "/site": {
+      const key = arg.toLowerCase();
+      if (!key) return "Usage: /site <key>. Use /sites to list keys.";
+      const site = await getSiteByKey(key);
+      if (!site) return `No site with key '${key}'. Use /sites to list.`;
+      // Resolve the active Telegram conversation (or create one) then pin it.
+      let conv = await getActiveTelegramConversation();
+      if (!conv) conv = await createConversation({ surface: "telegram" });
+      await updateConversation(conv.id, { siteId: site.id });
+      return `Pinned conversation to site '${site.key}' (${site.name}).`;
+    }
+
+    case "/sites": {
+      const all = await listSites();
+      if (all.length === 0) {
+        return "No sites yet. Create one in the web app at /sites/new.";
+      }
+      const lines = all.map((s) => `- ${s.key} — ${s.name} (${s.domain})`);
+      return ["Available sites:", ...lines].join("\n");
+    }
 
     case "/status":
       return `${BASE_URL}/api/health`;
