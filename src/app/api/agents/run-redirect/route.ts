@@ -13,10 +13,16 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const agentKey = String(form.get("agentKey") || "");
   const siteIdRaw = form.get("siteId");
-  // Fall back to site id=1 (the default site) when the form doesn't supply siteId.
-  const siteId = siteIdRaw ? Number(siteIdRaw) : 1;
   if (!agentKey) {
     return NextResponse.json({ error: "agentKey required" }, { status: 400 });
+  }
+  const siteId = siteIdRaw ? Number(siteIdRaw) : NaN;
+  if (!Number.isFinite(siteId) || siteId <= 0) {
+    // Redirect back to the agent page with an error rather than silently
+    // running against the default site. The UI button always supplies a
+    // siteId, so reaching this path means the form was constructed wrong.
+    const url = new URL(`/agents/${agentKey}?error=${encodeURIComponent("siteId required")}`, req.url);
+    return NextResponse.redirect(url, 303);
   }
   try {
     await runAgent({ agentKey, siteId });

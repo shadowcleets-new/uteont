@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { startRun, finishRun } from "@/lib/services/runs";
+import { getSiteByKey } from "@/lib/services/sites";
 
 /**
  * Daily cron — pulls GSC performance data.
@@ -9,13 +10,21 @@ import { startRun, finishRun } from "@/lib/services/runs";
  * run row so you can see the cron is firing.
  */
 export async function GET() {
-  // Site id=1 is the default site; cron runs are not scoped to a single site
-  // in this version — the cron always runs against the default.
+  // Cron is not scoped to a single site in this version — record the run
+  // against the 'default' site. Look it up by key (not hardcoded id=1)
+  // so this still works if the default site is recreated with a new id.
+  const defaultSite = await getSiteByKey("default");
+  if (!defaultSite) {
+    return NextResponse.json(
+      { ok: false, error: "default site missing — run db:migrate" },
+      { status: 500 },
+    );
+  }
   const run = await startRun({
     subjectKey: "agent.performance-tracking",
     category: "agent",
     action: "daily-pull",
-    siteId: 1,
+    siteId: defaultSite.id,
   }).catch(() => null);
 
   // TODO: GSC API call when oauth configured.
