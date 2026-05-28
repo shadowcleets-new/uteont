@@ -1,35 +1,21 @@
+import Link from "next/link";
+
 export default function SettingsPage() {
   return (
-    <div className="px-9 py-8 max-w-[900px]">
-      <h1 className="text-[24px] font-semibold text-[#141413] tracking-tight mb-2">
-        Settings
-      </h1>
-      <p className="text-[13px] text-[#6b6a64] font-serif mb-6">
-        Configuration UI lands once the database is provisioned. For now,
-        runtime configuration lives in environment variables — see{" "}
-        <code className="text-[12px]">.env.example</code>.
-      </p>
-
-      <div className="rounded-[10px] border border-[#e8e6dc] bg-white p-5">
-        <ul className="text-[12px] text-[#6b6a64] space-y-2 font-serif">
-          <li>
-            <strong className="font-sans text-[#141413]">DATABASE_URL</strong>{" "}
-            — Neon Postgres connection (managed via Vercel integration)
-          </li>
-          <li>
-            <strong className="font-sans text-[#141413]">
-              TELEGRAM_BOT_TOKEN
-            </strong>{" "}
-            — Set up via @BotFather, then configured here
-          </li>
-          <li>
-            <strong className="font-sans text-[#141413]">
-              REDDIT_CLIENT_ID / SECRET
-            </strong>{" "}
-            — Optional, only for Research Agent&apos;s Reddit source
-          </li>
-        </ul>
+    <main className="p-6 max-w-5xl">
+      <h1 className="text-2xl mb-4">Settings</h1>
+      <nav className="flex gap-4 border-b border-black/10 mb-6">
+        <TabLink href="/settings?tab=general" label="General" />
+        <TabLink href="/sites" label="Sites" />
+        <TabLink href="/settings?tab=auth" label="Auth" />
+      </nav>
+      <div className="opacity-70 text-sm">
+        Choose a tab. Site profiles + integrations live under <Link href="/sites" className="underline">Sites</Link>.
       </div>
-    </div>
+    </main>
   );
+}
+
+function TabLink({ href, label }: { href: string; label: string }) {
+  return <Link href={href} className="pb-2 text-sm hover:opacity-100 opacity-80">{label}</Link>;
 }
