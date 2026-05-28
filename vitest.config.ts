@@ -1,5 +1,14 @@
 import { defineConfig } from "vitest/config";
 import path from "node:path";
+import dotenv from "dotenv";
+import fs from "fs";
+
+// Load .env.local for tests
+const envLocalPath = path.resolve(__dirname, ".env.local");
+if (fs.existsSync(envLocalPath)) {
+  const envConfig = dotenv.parse(fs.readFileSync(envLocalPath));
+  Object.assign(process.env, envConfig);
+}
 
 export default defineConfig({
   test: {
