@@ -18,6 +18,7 @@ import { runDirectorTurn } from "@/lib/services/director";
 const BodySchema = z.object({
   conversationId: z.number().int().positive().optional(),
   text: z.string().min(1).max(8000),
+  siteId: z.number().int().positive().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -37,7 +38,8 @@ export async function POST(req: NextRequest) {
     : null;
 
   if (!conversation) {
-    conversation = await createConversation({ surface: "web" });
+    const siteId = payload.siteId ?? null;
+    conversation = await createConversation({ surface: "web", siteId });
   }
 
   const history = await getMessages(conversation.id, 60);

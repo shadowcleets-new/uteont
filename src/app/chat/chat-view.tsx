@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Conversation, Message } from "@/lib/db/schema";
+import { useActiveSite } from "@/lib/hooks/use-active-site";
 
 interface ChatViewProps {
   initialConversationId: number | null;
@@ -26,27 +27,41 @@ const INTENT_BADGE: Record<string, { label: string; color: string }> = {
 };
 
 export function ChatView({ initialConversationId, recent }: ChatViewProps) {
+  const { activeSiteId, sites } = useActiveSite();
   const [conversationId, setConversationId] = useState<number | null>(
     initialConversationId,
   );
+  // siteId bound to the currently open conversation
+  const [convSiteId, setConvSiteId] = useState<number | null>(null);
+  // siteId chosen in the dropdown for new conversations
+  const [chosenSiteId, setChosenSiteId] = useState<number | null>(null);
   const [history, setHistory] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Sync chosenSiteId with activeSiteId once loaded (only if user hasn't chosen yet)
+  useEffect(() => {
+    if (chosenSiteId === null && activeSiteId !== null) {
+      setChosenSiteId(activeSiteId);
+    }
+  }, [activeSiteId, chosenSiteId]);
+
   // Load history when conversationId changes
   useEffect(() => {
     if (!conversationId) {
       setHistory([]);
+      setConvSiteId(null);
       return;
     }
     (async () => {
       try {
         const res = await fetch(`/api/director/conversations/${conversationId}`);
         if (!res.ok) throw new Error(await res.text());
-        const data = (await res.json()) as { messages: Message[] };
+        const data = (await res.json()) as { conversation: Conversation; messages: Message[] };
         setHistory(data.messages);
+        setConvSiteId(data.conversation.siteId ?? null);
       } catch (e) {
         setError(String(e));
       }
@@ -76,18 +91,27 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
     setHistory((h) => [...h, optimistic]);
     setInput("");
     try {
+      const body: Record<string, unknown> = {
+        conversationId: conversationId ?? undefined,
+        text,
+      };
+      // Only send siteId when starting a new conversation
+      if (!conversationId && chosenSiteId !== null) {
+        body.siteId = chosenSiteId;
+      }
       const res = await fetch("/api/director/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: conversationId ?? undefined, text }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as ApiResponse;
       setConversationId(data.conversationId);
-      // Replace optimistic with real history fetch
+      // Replace optimistic with real history fetch (also captures siteId)
       const fresh = await fetch(`/api/director/conversations/${data.conversationId}`);
-      const freshData = (await fresh.json()) as { messages: Message[] };
+      const freshData = (await fresh.json()) as { conversation: Conversation; messages: Message[] };
       setHistory(freshData.messages);
+      setConvSiteId(freshData.conversation.siteId ?? null);
     } catch (e) {
       setError(String(e));
       // Roll back the optimistic message on error
@@ -99,6 +123,7 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
 
   const startNew = () => {
     setConversationId(null);
+    setConvSiteId(null);
     setHistory([]);
     setInput("");
     setError(null);
@@ -154,6 +179,18 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
 
       {/* Main thread */}
       <main className="flex-1 flex flex-col bg-white">
+        {/* Conversation header — shows bound-site chip when a conversation is open */}
+        {conversationId && convSiteId !== null && (() => {
+          const site = sites.find((s) => s.id === convSiteId);
+          return site ? (
+            <div className="px-8 py-2 border-b border-[#e8e6dc] bg-[#faf9f5] flex items-center">
+              <span className="ml-0 inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-black/5 border border-black/10">
+                <span className="opacity-60">site</span>
+                <span>{site.key}</span>
+              </span>
+            </div>
+          ) : null;
+        })()}
         <div
           ref={scrollRef}
           className="flex-1 overflow-y-auto px-8 py-6"
@@ -180,6 +217,29 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
             {error && (
               <div className="text-[12px] text-[#a33b2b] bg-[#fcf3f1] border border-[#e8c0b8] rounded-md p-2 mb-2">
                 {error}
+              </div>
+            )}
+            {/* Site selector — only shown when starting a new conversation */}
+            {!conversationId && sites.length > 0 && (
+              <div className="mb-2 flex items-center gap-2">
+                <label className="text-[11px] text-[#9a988e]" htmlFor="site-select">
+                  Site
+                </label>
+                <select
+                  id="site-select"
+                  value={chosenSiteId ?? ""}
+                  onChange={(e) =>
+                    setChosenSiteId(e.target.value ? Number(e.target.value) : null)
+                  }
+                  className="rounded border border-[#cfccc1] px-2 py-1 text-[12px] text-[#141413] bg-white focus:outline-none focus:border-[#d97757]"
+                >
+                  <option value="">— none —</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.key}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
             <div className="flex gap-2">
