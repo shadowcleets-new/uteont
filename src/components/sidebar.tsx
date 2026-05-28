@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
 import { signOutAction } from "@/app/logout/actions";
+import { SiteSelector } from "@/components/site-selector";
 
 interface NavItem {
   label: string;
@@ -60,6 +61,7 @@ export function Sidebar() {
       </div>
 
       <nav className="py-2 flex-1">
+        <SiteSelector />
         {SECTIONS.map((section, idx) => (
           <div key={section.title} className={cn(idx > 0 && "mt-6")}>
             <div className="px-5 py-1 text-[10px] font-bold tracking-wider text-[#9a988e]">
