@@ -7,6 +7,7 @@ import { getAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import type { Run } from "@/lib/db/schema";
 import type { PillState } from "@/lib/theme";
+import { RunAgentButton } from "./run-agent-button";
 
 export const dynamic = "force-dynamic";
 
@@ -187,36 +188,3 @@ function RunRow({ run }: { run: Run }) {
   );
 }
 
-// --- client island for the Run button ---
-function RunAgentButton({
-  agentKey,
-  disabled,
-}: {
-  agentKey: string;
-  disabled: boolean;
-}) {
-  // Server-rendered link; a future client island can replace this with a
-  // POST + spinner. Keeping it simple: an <a> that hits the run endpoint via
-  // a tiny inline form so we don't need to mark the whole page as client.
-  if (disabled) {
-    return (
-      <button
-        disabled
-        className="rounded-md bg-[#f3f1ea] text-[#9a988e] px-4 py-2 text-sm font-medium cursor-not-allowed"
-      >
-        Run agent
-      </button>
-    );
-  }
-  return (
-    <form action="/api/agents/run-redirect" method="post">
-      <input type="hidden" name="agentKey" value={agentKey} />
-      <button
-        type="submit"
-        className="rounded-md bg-[#d97757] text-white px-4 py-2 text-sm font-medium hover:bg-[#c66948] transition-colors"
-      >
-        Run agent
-      </button>
-    </form>
-  );
-}

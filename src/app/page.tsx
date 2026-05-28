@@ -1,8 +1,23 @@
 import { AGENTS } from "@/lib/agents/registry";
 import { AgentCard } from "@/components/agent-card";
-import { getAllAgentStats } from "@/lib/services/stats";
+import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
+import { listRuns } from "@/lib/services/runs";
+import { getDb } from "@/lib/db/client";
+import { kvSettings, sites } from "@/lib/db/schema";
+import { eq, inArray } from "drizzle-orm";
+import type { Run } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
+
+async function getActiveSiteIdServer(): Promise<number | null> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(kvSettings)
+    .where(eq(kvSettings.key, "ui.activeSiteId"))
+    .limit(1);
+  return row ? (row.value as { id: number | null }).id : null;
+}
 
 async function getSystemStatus() {
   try {
@@ -16,10 +31,25 @@ async function getSystemStatus() {
 }
 
 export default async function DashboardPage() {
-  const [stats, sysStatus] = await Promise.all([
+  const [stats, sysStatus, activeSiteId] = await Promise.all([
     getAllAgentStats(),
     getSystemStatus(),
+    getActiveSiteIdServer(),
   ]);
+
+  // Recent runs, filtered by active site when one is selected
+  const recent = activeSiteId
+    ? await listRuns(undefined, 20, { siteId: activeSiteId })
+    : await listRuns(undefined, 20);
+
+  // Look up site names without N+1 queries
+  const db = getDb();
+  const siteIds = [...new Set(recent.map((r) => r.siteId))];
+  const siteRows =
+    siteIds.length === 0
+      ? []
+      : await db.select().from(sites).where(inArray(sites.id, siteIds));
+  const siteById = new Map(siteRows.map((s) => [s.id, s]));
 
   const totalRuns = Object.values(stats).reduce((acc, s) => acc + s.totalRuns, 0);
   const implementedAgents = AGENTS.filter((a) => a.implemented).length;
@@ -45,7 +75,7 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <section>
+      <section className="mb-8">
         <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">
           AGENTS
         </div>
@@ -54,6 +84,45 @@ export default async function DashboardPage() {
             <AgentCard key={agent.key} agent={agent} stats={stats[agent.key]} />
           ))}
         </div>
+      </section>
+
+      <section>
+        <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">
+          RECENT RUNS
+        </div>
+        {recent.length === 0 ? (
+          <div className="rounded-[10px] border border-[#e8e6dc] bg-white p-8 text-center">
+            <p className="text-[12px] text-[#9a988e] italic font-serif">
+              No runs yet — they&apos;ll appear here once agents run.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden">
+            <table className="w-full text-[12px]">
+              <thead className="bg-[#faf9f5]">
+                <tr className="text-[10px] font-bold tracking-wider text-[#9a988e] text-left">
+                  <th className="px-4 py-2.5">AGENT</th>
+                  <th className="px-4 py-2.5">STARTED</th>
+                  <th className="px-4 py-2.5">STATUS</th>
+                  <th className="px-4 py-2.5">DURATION</th>
+                  {activeSiteId === null && (
+                    <th className="px-4 py-2.5">SITE</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((r) => (
+                  <DashRunRow
+                    key={r.id}
+                    run={r}
+                    showSite={activeSiteId === null}
+                    siteName={siteById.get(r.siteId)?.name ?? String(r.siteId)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -80,5 +149,51 @@ function Stat({ label, value, tone = "neutral" }: StatProps) {
         {value}
       </div>
     </div>
+  );
+}
+
+interface DashRunRowProps {
+  run: Run;
+  showSite: boolean;
+  siteName: string;
+}
+
+function DashRunRow({ run, showSite, siteName }: DashRunRowProps) {
+  const started = run.startedAt
+    ? new Date(run.startedAt as unknown as string)
+    : null;
+  const finished = run.finishedAt
+    ? new Date(run.finishedAt as unknown as string)
+    : null;
+  const duration =
+    started && finished
+      ? fmtDuration((finished.getTime() - started.getTime()) / 1000)
+      : run.status === "running"
+        ? "running…"
+        : "—";
+  const statusColor =
+    run.status === "success"
+      ? "#788c5d"
+      : run.status === "failure"
+        ? "#a33b2b"
+        : "#9a988e";
+  // Extract the agent key from subjectKey (format: "agent.<key>")
+  const agentLabel = run.subjectKey.startsWith("agent.")
+    ? run.subjectKey.slice(6)
+    : run.subjectKey;
+  return (
+    <tr className="border-t border-[#f3f1ea]">
+      <td className="px-4 py-2 text-[#141413] font-medium">{agentLabel}</td>
+      <td className="px-4 py-2 text-[#141413]">{fmtAgo(started)}</td>
+      <td className="px-4 py-2">
+        <span style={{ color: statusColor }} className="font-medium">
+          {run.status}
+        </span>
+      </td>
+      <td className="px-4 py-2 text-[#6b6a64]">{duration}</td>
+      {showSite && (
+        <td className="px-4 py-2 text-[#6b6a64]">{siteName}</td>
+      )}
+    </tr>
   );
 }
