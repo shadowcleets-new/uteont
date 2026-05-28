@@ -1,12 +1,13 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { conversations, messages } from "@/lib/db/schema";
-import type { Conversation, Message } from "@/lib/db/schema";
+import { conversations, messages, sites } from "@/lib/db/schema";
+import type { Conversation, Message, Site } from "@/lib/db/schema";
 
 export interface CreateConversationInput {
   title?: string | null;
   goal?: string | null;
   surface?: "web" | "telegram" | "both";
+  siteId?: number | null;
 }
 
 export async function createConversation(
@@ -19,9 +20,29 @@ export async function createConversation(
       title: input.title ?? null,
       goal: input.goal ?? null,
       surface: input.surface ?? "web",
+      siteId: input.siteId ?? null,
     })
     .returning();
   return row;
+}
+
+export async function getConversationWithSite(
+  conversationId: number,
+): Promise<{ conversation: Conversation; site: Site | null }> {
+  const db = getDb();
+  const [conv] = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  if (!conv) throw new Error(`Conversation ${conversationId} not found`);
+  if (!conv.siteId) return { conversation: conv, site: null };
+  const [site] = await db
+    .select()
+    .from(sites)
+    .where(eq(sites.id, conv.siteId))
+    .limit(1);
+  return { conversation: conv, site: site ?? null };
 }
 
 export async function getConversation(

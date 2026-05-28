@@ -17,14 +17,15 @@ import {
   appendMessage,
   getMessages,
   updateConversation,
+  getConversationWithSite,
   type AppendMessageInput,
 } from "./conversations";
 import { enqueueJob } from "./jobs";
-import type { Conversation, Message } from "@/lib/db/schema";
+import type { Conversation, Message, Site } from "@/lib/db/schema";
 
 // --- system prompt --------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are UTEONT's Director Agent — the user's single point of contact for SEO operations.
+const BASE_SYSTEM_PROMPT = `You are UTEONT's Director Agent — the user's single point of contact for SEO operations.
 
 VOICE
 - Concise + structured (strategist) and action-first (tactical operator)
@@ -94,6 +95,38 @@ Always return JSON with this exact shape, nothing else:
 - intent="report": text is a results summary or next-step suggestion. actions: optional follow-ups
 `;
 
+export function buildSystemPrompt(site: Site | null): string {
+  if (!site) {
+    return [
+      BASE_SYSTEM_PROMPT,
+      "",
+      "NO SITE SELECTED",
+      "No site selected yet for this conversation. If the user describes site-specific work, ask which site (one focused question, then propose).",
+    ].join("\n");
+  }
+  const siteBlock = [
+    "SITE CONTEXT",
+    `- Name: ${site.name}`,
+    `- Domain: ${site.domain}`,
+    `- Locale: ${site.locale}`,
+    site.niche ? `- Niche: ${site.niche}` : null,
+    site.audience ? `- Audience: ${site.audience}` : null,
+    site.voiceGuide ? `- Voice: ${site.voiceGuide}` : null,
+    site.contentPillars.length > 0
+      ? `- Content pillars: ${site.contentPillars.join(", ")}`
+      : null,
+    site.bannedPhrases.length > 0
+      ? `- Banned phrases: ${site.bannedPhrases.map((p) => `"${p}"`).join(", ")}`
+      : null,
+    site.defaultCategories.length > 0
+      ? `- Default categories: ${site.defaultCategories.join(", ")}`
+      : null,
+    "",
+    "All proposed work is for this site unless the user explicitly redirects to a different one. When dispatching agents, the site context above flows to the worker in the job payload — you don't need to repeat it in args.",
+  ].filter(Boolean).join("\n");
+  return [siteBlock, "", BASE_SYSTEM_PROMPT].join("\n");
+}
+
 // --- types ----------------------------------------------------------------
 
 type DirectorIntent = "ask" | "propose" | "execute" | "report";
@@ -146,6 +179,8 @@ interface PlanInput {
 export async function runDirectorTurn(
   input: PlanInput,
 ): Promise<{ message: Message; response: DirectorResponse }> {
+  const { conversation: _conv, site } = await getConversationWithSite(input.conversation.id);
+
   // 1. Persist the user's message
   await appendMessage({
     conversationId: input.conversation.id,
@@ -175,7 +210,7 @@ export async function runDirectorTurn(
   let parsed: DirectorResponse;
   try {
     const { data } = await completeJson<DirectorResponse>(transcript, {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: buildSystemPrompt(site),
       temperature: 0.4,
       maxOutputTokens: 2048,
       responseSchema: {
@@ -235,15 +270,29 @@ export async function runDirectorTurn(
     for (const action of parsed.actions) {
       const agentKey = TOOL_TO_AGENT[action.tool];
       if (!agentKey) continue;
-      // Use the conversation's siteId if set; fall back to site id=1 (default)
-      // until Task 8 wires the Director API to always pass a siteId.
-      const siteId = input.conversation.siteId ?? 1;
+      if (!site) {
+        console.warn("Director enqueue blocked: conversation has no site", input.conversation.id);
+        continue;
+      }
+      const siteSnapshot = {
+        id: site.id,
+        key: site.key,
+        name: site.name,
+        domain: site.domain,
+        locale: site.locale,
+        niche: site.niche,
+        audience: site.audience,
+        voiceGuide: site.voiceGuide,
+        contentPillars: site.contentPillars,
+        bannedPhrases: site.bannedPhrases,
+      };
       const job = await enqueueJob({
         agentKey,
-        siteId,
+        siteId: site.id,
         payload: {
           ...action.args,
           _directorContext: { conversationId: input.conversation.id },
+          site: siteSnapshot,
         },
       });
       enqueued.push({ tool: action.tool, jobId: job.id, args: action.args });
