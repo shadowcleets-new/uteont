@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 
 import {
   createSite, getSiteById, getSiteByKey, listSites, updateSite, archiveSite,
+  SiteNotFoundError,
 } from "./sites";
 
 let db: ReturnType<typeof getDb>;
@@ -83,5 +84,13 @@ describe("sites service", () => {
     const listAll = await listSites({ includeArchived: true });
     expect(listAll.find((s) => s.id === row.id)?.status).toBe("archived");
     await db.delete(sites).where(eq(sites.id, row.id));
+  });
+
+  it("updateSite throws SiteNotFoundError for a missing id", async () => {
+    await expect(updateSite(999_999_999, { name: "ghost" })).rejects.toBeInstanceOf(SiteNotFoundError);
+  });
+
+  it("archiveSite throws SiteNotFoundError for a missing id", async () => {
+    await expect(archiveSite(999_999_999)).rejects.toBeInstanceOf(SiteNotFoundError);
   });
 });

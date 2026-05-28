@@ -10,6 +10,13 @@ export class SiteKeyTakenError extends Error {
   }
 }
 
+export class SiteNotFoundError extends Error {
+  constructor(id: number) {
+    super(`Site not found: id=${id}`);
+    this.name = "SiteNotFoundError";
+  }
+}
+
 export async function createSite(input: SiteCreateInput): Promise<Site> {
   const db = getDb();
   try {
@@ -75,6 +82,7 @@ export async function updateSite(
     .set({ ...input, updatedAt: new Date() })
     .where(eq(sites.id, id))
     .returning();
+  if (!row) throw new SiteNotFoundError(id);
   return row;
 }
 
@@ -84,5 +92,6 @@ export async function archiveSite(id: number): Promise<Site> {
     .set({ status: "archived", updatedAt: new Date() })
     .where(eq(sites.id, id))
     .returning();
+  if (!row) throw new SiteNotFoundError(id);
   return row;
 }
