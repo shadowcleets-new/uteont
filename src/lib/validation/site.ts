@@ -28,3 +28,21 @@ export const siteUpdateSchema = siteCreateSchema
 
 export type SiteCreateInput = z.infer<typeof siteCreateSchema>;
 export type SiteUpdateInput = z.infer<typeof siteUpdateSchema>;
+
+export const INTEGRATION_KINDS = [
+  "wordpress", "vercel", "shopify", "webflow", "ghost",
+  "gsc", "ga4", "slack",
+] as const;
+
+export const integrationCreateSchema = z.object({
+  kind: z.enum(INTEGRATION_KINDS),
+  label: z.string().max(80).optional(),
+  config: z.record(z.string(), z.unknown()),  // free-form for v1; per-kind shapes land in spec 2
+});
+
+export const integrationUpdateSchema = integrationCreateSchema
+  .partial()
+  .omit({ kind: true });
+
+export type IntegrationCreateInput = z.infer<typeof integrationCreateSchema>;
+export type IntegrationUpdateInput = z.infer<typeof integrationUpdateSchema>;
