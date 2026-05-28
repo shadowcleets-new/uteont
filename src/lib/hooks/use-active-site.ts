@@ -10,13 +10,18 @@ export function useActiveSite() {
 
   useEffect(() => {
     (async () => {
-      const [active, list] = await Promise.all([
-        fetch("/api/ui/active-site").then((r) => r.json()),
-        fetch("/api/sites").then((r) => r.json()),
-      ]);
-      setActiveSiteId(active.siteId);
-      setSites(list);
-      setLoading(false);
+      try {
+        const [active, list] = await Promise.all([
+          fetch("/api/ui/active-site").then((r) => r.json()),
+          fetch("/api/sites").then((r) => r.json()),
+        ]);
+        setActiveSiteId(active.siteId);
+        setSites(Array.isArray(list) ? list : []);
+      } catch (e) {
+        console.error("useActiveSite load failed:", e);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 

@@ -14,8 +14,9 @@ export function SiteSelector() {
   }
   return (
     <div className="px-3 py-2 border-b border-black/10">
-      <label className="block text-[10px] uppercase tracking-wide opacity-60 mb-1">Site</label>
+      <label htmlFor="site-selector" className="block text-[10px] uppercase tracking-wide opacity-60 mb-1">Site</label>
       <select
+        id="site-selector"
         className="w-full bg-transparent border border-black/10 rounded text-sm px-2 py-1"
         value={activeSiteId ?? ""}
         onChange={(e) => setActiveSiteId(e.target.value === "" ? null : Number(e.target.value))}
