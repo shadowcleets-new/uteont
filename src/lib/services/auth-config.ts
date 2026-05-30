@@ -48,6 +48,40 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
+// Usernames are a single login handle, never a sentence. Restricting the
+// charset (and rejecting spaces / '/') stops the /setuser + /setpassword
+// command-chaining mistake from silently storing a whole command line as the
+// username (which then never matches at login). Returns an error string, or
+// null when the username is acceptable.
+const USERNAME_RE = /^[A-Za-z0-9._@-]{1,64}$/;
+
+export function validateUsername(username: string): string | null {
+  const trimmed = username.trim();
+  if (!trimmed) return "Username cannot be empty.";
+  if (trimmed.length > 64) return "Username too long (max 64).";
+  if (/\s/.test(trimmed)) {
+    return "Username cannot contain spaces — did you accidentally chain a command like /setpassword on the same line?";
+  }
+  if (trimmed.includes("/")) {
+    return "Username cannot contain '/' — did you accidentally chain another command?";
+  }
+  if (!USERNAME_RE.test(trimmed)) {
+    return "Username may only contain letters, digits, and . _ - @";
+  }
+  return null;
+}
+
+// The Telegram alert sent whenever the password is set or reset, so an
+// unauthorized reset (e.g. via a compromised Telegram) is immediately visible.
+export function passwordChangeAlertText(): string {
+  return (
+    "⚠️ *UTEONT security alert*\n\n" +
+    "Your account password was just changed.\n\n" +
+    "If this wasn't you, your Telegram may be compromised — secure it and run " +
+    "/setpassword-url to reset the password immediately."
+  );
+}
+
 /**
  * Distinguishes "no row yet" (`null`) from "table missing / DB unreachable"
  * (`undefined`). Callers that only need the optional value should pass through
@@ -112,10 +146,23 @@ async function upsert(
 }
 
 export async function setUsername(username: string): Promise<void> {
-  const trimmed = username.trim();
-  if (!trimmed) throw new Error("username cannot be empty");
-  if (trimmed.length > 64) throw new Error("username too long (max 64)");
-  await upsert({ username: trimmed });
+  const error = validateUsername(username);
+  if (error) throw new Error(error);
+  await upsert({ username: username.trim() });
+}
+
+/**
+ * Best-effort security alert on password change. Never throws into the caller
+ * (a notification failure must not break a password reset) and is a no-op when
+ * Telegram isn't configured.
+ */
+async function notifyPasswordChanged(): Promise<void> {
+  try {
+    const { sendMessage } = await import("./telegram");
+    await sendMessage({ text: passwordChangeAlertText(), parseMode: "Markdown" });
+  } catch (e) {
+    console.warn("[auth-config] password-change alert failed", e);
+  }
 }
 
 export async function setPassword(password: string): Promise<void> {
@@ -123,6 +170,7 @@ export async function setPassword(password: string): Promise<void> {
   if (error) throw new Error(error);
   const hash = await bcrypt.hash(password, BCRYPT_COST);
   await upsert({ passwordHash: hash });
+  await notifyPasswordChanged();
 }
 
 export async function setAllowedGoogleEmail(email: string): Promise<void> {
