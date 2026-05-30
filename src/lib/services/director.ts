@@ -13,6 +13,9 @@
  */
 
 import { completeJson, GeminiError } from "./gemini";
+import { pickModel } from "./model-router";
+import { getOrCreateCachedContent } from "./gemini-cache";
+import { newTraceId } from "@/lib/observability/logger";
 import {
   appendMessage,
   getMessages,
@@ -207,10 +210,23 @@ export async function runDirectorTurn(
   const transcript = transcriptLines.join("\n");
 
   // 3. Ask Gemini
+  const model = pickModel("director");
+  const sysPrompt = buildSystemPrompt(site);
+  const traceId = newTraceId();
+  // Best-effort explicit context cache for the (stable) system prompt; null =>
+  // inline systemInstruction (free tier / under min tokens / kill-switch).
+  const cachedContent = await getOrCreateCachedContent({
+    model,
+    systemInstruction: sysPrompt,
+    ttlSeconds: 3600,
+  }).catch(() => null);
   let parsed: DirectorResponse;
   try {
     const { data } = await completeJson<DirectorResponse>(transcript, {
-      systemInstruction: buildSystemPrompt(site),
+      model,
+      task: "director",
+      traceId,
+      ...(cachedContent ? { cachedContent } : { systemInstruction: sysPrompt }),
       temperature: 0.4,
       maxOutputTokens: 2048,
       responseSchema: {
