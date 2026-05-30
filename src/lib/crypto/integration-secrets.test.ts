@@ -17,9 +17,9 @@ describe("integration-secrets", () => {
   it("rejects tampered ciphertext (GCM auth tag fails)", async () => {
     const { encrypt, decrypt } = await import("./integration-secrets");
     const { ciphertext, iv, tag } = encrypt({ foo: "bar" });
-    const tampered =
-      Buffer.from(ciphertext, "base64").map((b, i) => (i === 0 ? b ^ 1 : b))
-        .toString("base64");
+    const tampered = Buffer.from(
+      Buffer.from(ciphertext, "base64").map((b, i) => (i === 0 ? b ^ 1 : b)),
+    ).toString("base64");
     expect(() => decrypt(tampered, iv, tag)).toThrow();
   });
 
