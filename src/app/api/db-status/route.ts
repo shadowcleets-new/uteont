@@ -30,6 +30,7 @@ export async function GET() {
     "login_attempts",
     "messages",
     "notifications",
+    "result_cache",
     "runs",
     "site_integrations",
     "sites",

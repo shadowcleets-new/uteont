@@ -371,6 +371,33 @@ export const messages = pgTable(
   }),
 );
 
+/**
+ * Cost-efficiency: result dedup cache. A finished agent result is keyed by a
+ * deterministic hash of (agentKey, siteId, site-profile signature, payload).
+ * A future enqueue with the same key replays the stored result instead of
+ * running the worker again. TTL is per-agent (see services/result-cache.ts).
+ */
+export const resultCache = pgTable(
+  "result_cache",
+  {
+    id:          serial("id").primaryKey(),
+    dedupeKey:   text("dedupe_key").notNull(),
+    agentKey:    text("agent_key").notNull(),
+    siteId:      integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    result:      jsonb("result").$type<Record<string, unknown>>().notNull(),
+    sourceRunId: integer("source_run_id"),
+    sourceJobId: integer("source_job_id"),
+    hitCount:    integer("hit_count").notNull().default(0),
+    createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt:   timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    byKey:     uniqueIndex("result_cache_dedupe_key_unique_idx").on(t.dedupeKey),
+    byAgent:   index("result_cache_agent_site_idx").on(t.agentKey, t.siteId),
+    byExpires: index("result_cache_expires_idx").on(t.expiresAt),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -387,3 +414,4 @@ export type AuthConfig = typeof authConfig.$inferSelect;
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type ResultCache = typeof resultCache.$inferSelect;
