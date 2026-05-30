@@ -1,7 +1,16 @@
-import { and, eq, inArray, sql, desc, asc, isNull } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
+import {
+  isDedupeEligible,
+  isCacheableResult,
+  computeDedupeKey,
+  lookupResult,
+  storeResult,
+  bumpHitCount,
+} from "./result-cache";
+import { logEvent } from "@/lib/observability/logger";
 
 export interface EnqueueJobInput {
   agentKey: string;
@@ -30,6 +39,168 @@ export async function enqueueJob(input: EnqueueJobInput) {
     })
     .returning();
   return row;
+}
+
+export type DispatchResult =
+  | { mode: "enqueued"; job: typeof jobs.$inferSelect }
+  | { mode: "cached"; runId: number; result: Record<string, unknown>; sourceJobId: number | null };
+
+/**
+ * Dedup-aware enqueue. If the agent is dedupe-eligible and this request hashes
+ * to a live cached result (and forceFresh isn't set), replay that result via
+ * applyJobResult instead of enqueuing a worker job. Any failure falls through
+ * to a normal enqueue (fail-safe — dedup can never block real work).
+ */
+export async function dispatchAgentJob(
+  input: EnqueueJobInput & { forceFresh?: boolean },
+): Promise<DispatchResult> {
+  const payload: Record<string, unknown> = { ...input.payload };
+
+  if (isDedupeEligible(input.agentKey) && !input.forceFresh) {
+    const dedupeKey = computeDedupeKey(input.agentKey, input.siteId, payload);
+    let hit: Awaited<ReturnType<typeof lookupResult>> = null;
+    try {
+      hit = await lookupResult(dedupeKey);
+    } catch (e) {
+      console.warn("dispatchAgentJob: lookupResult failed; enqueuing fresh", e);
+      hit = null;
+    }
+    if (hit) {
+      try {
+        const { runId } = await applyJobResult({
+          agentKey: input.agentKey,
+          siteId: input.siteId,
+          cycleId: input.cycleId ?? null,
+          payload,
+          result: hit.result,
+          jobId: null,
+          notifyJobId: hit.sourceJobId ?? 0,
+          startedAt: new Date(),
+          suppressDirectorMessage: true,
+        });
+        try {
+          await bumpHitCount(hit.id);
+        } catch (e) {
+          console.warn("dispatchAgentJob: bumpHitCount failed", e);
+        }
+        logEvent({
+          kind: "dedup.hit",
+          agentKey: input.agentKey,
+          siteId: input.siteId,
+          sourceJobId: hit.sourceJobId ?? undefined,
+        });
+        return { mode: "cached", runId, result: hit.result, sourceJobId: hit.sourceJobId ?? null };
+      } catch (e) {
+        // Replay failed — fall through to a normal enqueue.
+        console.warn("dispatchAgentJob: cache replay failed; enqueuing fresh", e);
+      }
+    } else {
+      logEvent({ kind: "dedup.miss", agentKey: input.agentKey, siteId: input.siteId });
+    }
+    // Miss (or replay failure): stamp the key so completeJob stores the fresh result.
+    payload._dedupeKey = dedupeKey;
+  }
+
+  const job = await enqueueJob({
+    agentKey: input.agentKey,
+    siteId: input.siteId,
+    payload,
+    cycleId: input.cycleId,
+    priority: input.priority,
+    maxAttempts: input.maxAttempts,
+  });
+  return { mode: "enqueued", job };
+}
+
+/**
+ * Apply all side-effects of a finished agent result: write the runs row,
+ * persist agent-specific output, send the Telegram notification, and (unless
+ * suppressed) post the Director conversation system message.
+ *
+ * Extracted from completeJob so a cached replay can reproduce the exact same
+ * effects without a real job. On the real worker path completeJob calls this
+ * with the job's real ids, so behavior is unchanged.
+ */
+export interface ApplyJobResultInput {
+  agentKey: string;
+  siteId: number;
+  cycleId: number | null;
+  payload: Record<string, unknown>;
+  result: Record<string, unknown>;
+  jobId?: number | null; // runs.job_id — null on replay
+  notifyJobId?: number; // Telegram message/button id — replay passes sourceJobId ?? 0
+  startedAt?: Date;
+  suppressDirectorMessage?: boolean; // replay-from-Director sets true (Director re-posts)
+}
+
+export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runId: number }> {
+  const db = getDb();
+
+  // 1. Write a runs row (telemetry)
+  const [run] = await db
+    .insert(runs)
+    .values({
+      subjectKey: `agent.${input.agentKey}`,
+      category: "agent",
+      action: `worker:${input.agentKey}`,
+      siteId: input.siteId,
+      cycleId: input.cycleId,
+      jobId: input.jobId ?? null,
+      startedAt: input.startedAt ?? new Date(),
+      finishedAt: new Date(),
+      status: "success",
+      result: input.result,
+    })
+    .returning();
+
+  // 2. Agent-specific persistence (each wrapped — a typed-table issue must not
+  //    roll back the runs row).
+  try {
+    if (input.agentKey === "research") {
+      await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
+    } else if (input.agentKey === "idea-generation") {
+      await persistIdeas(input.cycleId, input.result);
+    } else if (input.agentKey === "content-writing") {
+      await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
+    }
+    // outreach/backlink: result captured in runs.result; no typed table v1.
+  } catch (e) {
+    console.warn(`applyJobResult: agent-persist failed for ${input.agentKey}`, e);
+  }
+
+  // 3. Telegram notification (best-effort, never throws into caller)
+  try {
+    await notifyJobSuccess(input.agentKey, input.notifyJobId ?? 0, input.result);
+  } catch (e) {
+    console.warn("applyJobResult: notifyJobSuccess failed", e);
+  }
+
+  // 4. Director conversation system message (unless the caller will post it).
+  if (!input.suppressDirectorMessage) {
+    try {
+      const ctx = (input.payload as Record<string, unknown> | null)?.["_directorContext"] as
+        | { conversationId?: number }
+        | undefined;
+      if (ctx?.conversationId) {
+        const { appendMessage } = await import("./conversations");
+        await appendMessage({
+          conversationId: ctx.conversationId,
+          role: "system",
+          content: `${input.agentKey} job ${input.notifyJobId ?? input.jobId ?? 0} completed`,
+          payload: {
+            kind: "job-completed",
+            agentKey: input.agentKey,
+            jobId: input.jobId ?? null,
+            result: input.result,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("applyJobResult: director-conversation update failed", e);
+    }
+  }
+
+  return { runId: run.id };
 }
 
 /**
@@ -82,8 +253,9 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
 }
 
 /**
- * Complete a job: update job row, write a runs entry, and persist
- * agent-specific output (e.g. research → keywords table).
+ * Complete a job: mark it done, apply all result side-effects (runs row,
+ * persistence, notification, Director message), then best-effort store the
+ * result for dedup if eligible.
  */
 export async function completeJob(jobId: number, result: Record<string, unknown>) {
   const db = getDb();
@@ -93,70 +265,44 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
   // 1. Mark job done
   await db
     .update(jobs)
-    .set({
-      status: "done",
-      finishedAt: new Date(),
-      result,
-    })
+    .set({ status: "done", finishedAt: new Date(), result })
     .where(eq(jobs.id, jobId));
 
-  // 2. Write a runs row (telemetry)
+  // 2. Apply all result side-effects (identical to the pre-refactor behavior)
   const startedAt = (job.claimedAt as Date | null) ?? (job.createdAt as Date);
-  const [run] = await db
-    .insert(runs)
-    .values({
-      subjectKey: `agent.${job.agentKey}`,
-      category: "agent",
-      action: `worker:${job.agentKey}`,
-      siteId: job.siteId,
-      cycleId: job.cycleId,
-      jobId: job.id,
-      startedAt,
-      finishedAt: new Date(),
-      status: "success",
-      result,
-    })
-    .returning();
+  const { runId } = await applyJobResult({
+    agentKey: job.agentKey,
+    siteId: job.siteId,
+    cycleId: job.cycleId,
+    payload: (job.payload ?? {}) as Record<string, unknown>,
+    result,
+    jobId: job.id,
+    notifyJobId: job.id,
+    startedAt,
+    suppressDirectorMessage: false,
+  });
 
-  // 3. Agent-specific persistence (each wrapped — a typed-table issue
-  //    must not roll back the runs row or the job 'done' status).
+  // 3. Store to the dedup cache (best-effort — never breaks the job). The key
+  //    was stamped onto the payload at dispatch time; never recompute here.
   try {
-    if (job.agentKey === "research") {
-      await persistResearchKeywords(job.siteId, job.cycleId, run.id, result);
-    } else if (job.agentKey === "idea-generation") {
-      await persistIdeas(job.cycleId, result);
-    } else if (job.agentKey === "content-writing") {
-      await persistArticle(job.siteId, job.cycleId, job.payload as Record<string, unknown>, result);
-    }
-    // outreach/backlink: result captured in runs.result_json; no typed table v1.
-  } catch (e) {
-    console.warn(`completeJob: agent-persist failed for ${job.agentKey}`, e);
-  }
-
-  // 4. Telegram notification (best-effort, never throws into caller)
-  try {
-    await notifyJobSuccess(job.agentKey, job.id, result);
-  } catch (e) {
-    console.warn("completeJob: notifyJobSuccess failed", e);
-  }
-
-  // 5. If this job was dispatched by the Director, post a system message
-  //    into that conversation so the Director can plan the next step.
-  try {
-    const ctx = (job.payload as Record<string, unknown> | null)?.[
-      "_directorContext"
-    ] as { conversationId?: number } | undefined;
-    if (ctx?.conversationId) {
-      const { appendMessage } = await import("./conversations");
-      await appendMessage({
-        conversationId: ctx.conversationId,
-        role: "system",
-        content: `${job.agentKey} job ${job.id} completed`,
-        payload: { kind: "job-completed", agentKey: job.agentKey, jobId: job.id, result },
+    const payload = (job.payload ?? {}) as Record<string, unknown>;
+    const dedupeKey = payload["_dedupeKey"];
+    if (
+      typeof dedupeKey === "string" &&
+      isDedupeEligible(job.agentKey) &&
+      isCacheableResult(job.agentKey, result)
+    ) {
+      await storeResult({
+        dedupeKey,
+        agentKey: job.agentKey,
+        siteId: job.siteId,
+        result,
+        sourceRunId: runId,
+        sourceJobId: job.id,
       });
     }
   } catch (e) {
-    console.warn("completeJob: director-conversation update failed", e);
+    console.warn("completeJob: storeResult failed", e);
   }
 }
 

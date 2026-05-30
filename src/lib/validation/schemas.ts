@@ -18,6 +18,7 @@ export const RunAgentRequest = z.object({
   siteId: z.number().int().positive(),
   cycleId: z.number().int().positive().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
+  forceFresh: z.boolean().optional(),
 });
 
 // --- Cycles -------------------------------------------------------------

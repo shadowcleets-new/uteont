@@ -20,7 +20,7 @@ import {
   getConversationWithSite,
   type AppendMessageInput,
 } from "./conversations";
-import { enqueueJob } from "./jobs";
+import { dispatchAgentJob } from "./jobs";
 import type { Conversation, Message, Site } from "@/lib/db/schema";
 
 // --- system prompt --------------------------------------------------------
@@ -260,8 +260,19 @@ export async function runDirectorTurn(
     };
   }
 
-  // 4. If actions are present and we have permission to execute, enqueue
-  const enqueued: Array<{ tool: string; jobId: number; args: Record<string, unknown> }> = [];
+  // 4. If actions are present and we have permission to execute, dispatch.
+  const enqueued: Array<{
+    tool: string;
+    jobId?: number;
+    runId?: number;
+    args: Record<string, unknown>;
+    cached?: boolean;
+  }> = [];
+  const cachedResults: Array<{
+    agentKey: string;
+    result: Record<string, unknown>;
+    sourceJobId: number | null;
+  }> = [];
   if (
     parsed.intent === "execute" &&
     parsed.actions &&
@@ -286,7 +297,7 @@ export async function runDirectorTurn(
         contentPillars: site.contentPillars,
         bannedPhrases: site.bannedPhrases,
       };
-      const job = await enqueueJob({
+      const dispatch = await dispatchAgentJob({
         agentKey,
         siteId: site.id,
         payload: {
@@ -295,7 +306,12 @@ export async function runDirectorTurn(
           site: siteSnapshot,
         },
       });
-      enqueued.push({ tool: action.tool, jobId: job.id, args: action.args });
+      if (dispatch.mode === "cached") {
+        enqueued.push({ tool: action.tool, runId: dispatch.runId, args: action.args, cached: true });
+        cachedResults.push({ agentKey, result: dispatch.result, sourceJobId: dispatch.sourceJobId });
+      } else {
+        enqueued.push({ tool: action.tool, jobId: dispatch.job.id, args: action.args });
+      }
     }
     // Mark plan as approved (first execute crosses the approval threshold)
     if (!input.conversation.planApproved) {
@@ -317,6 +333,28 @@ export async function runDirectorTurn(
     payload: assistantPayload,
     surface: input.surface,
   });
+
+  // Cache hits resolved synchronously. The replay suppressed its own
+  // conversation message to preserve ordering; post the job-completed system
+  // messages now, AFTER the assistant "executing" message.
+  for (const c of cachedResults) {
+    try {
+      await appendMessage({
+        conversationId: input.conversation.id,
+        role: "system",
+        content: `${c.agentKey} (cached) completed`,
+        payload: {
+          kind: "job-completed",
+          agentKey: c.agentKey,
+          jobId: c.sourceJobId,
+          result: c.result,
+          cached: true,
+        },
+      });
+    } catch (e) {
+      console.warn("Director: cached job-completed append failed", e);
+    }
+  }
 
   // Update conversation title/goal if first turn
   if (!input.conversation.goal && input.newUserMessage.length > 0) {

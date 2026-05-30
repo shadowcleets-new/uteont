@@ -42,6 +42,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       siteId: site.id,
       payload: enhancedPayload,
       cycleId: parsed.cycleId,
+      forceFresh: parsed.forceFresh,
     });
     return NextResponse.json(result);
   } catch (e: unknown) {

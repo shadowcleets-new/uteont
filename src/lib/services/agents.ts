@@ -7,13 +7,14 @@
 import { findAgent } from "@/lib/agents/registry";
 import { INLINE_RUNNERS, hasInlineRunner } from "@/lib/agent-runners";
 import { startRun, finishRun } from "./runs";
-import { enqueueJob } from "./jobs";
+import { dispatchAgentJob } from "./jobs";
 
 export interface RunAgentResult {
-  mode: "inline" | "enqueued";
+  mode: "inline" | "enqueued" | "cached";
   runId?: number;
   jobId?: number;
   result?: Record<string, unknown>;
+  cached?: boolean;
 }
 
 export async function runAgent(opts: {
@@ -21,6 +22,7 @@ export async function runAgent(opts: {
   siteId: number;       // required — propagated to runs + jobs
   payload?: Record<string, unknown>;
   cycleId?: number;
+  forceFresh?: boolean;
 }): Promise<RunAgentResult> {
   const spec = findAgent(opts.agentKey);
   if (!spec) throw new Error(`unknown agent '${opts.agentKey}'`);
@@ -48,12 +50,16 @@ export async function runAgent(opts: {
     }
   }
 
-  // worker runtime — enqueue
-  const job = await enqueueJob({
+  // worker runtime — dispatch (dedup-aware)
+  const dispatch = await dispatchAgentJob({
     agentKey: opts.agentKey,
     siteId: opts.siteId,
     payload,
     cycleId: opts.cycleId,
+    forceFresh: opts.forceFresh,
   });
-  return { mode: "enqueued", jobId: job.id };
+  if (dispatch.mode === "cached") {
+    return { mode: "cached", runId: dispatch.runId, result: dispatch.result, cached: true };
+  }
+  return { mode: "enqueued", jobId: dispatch.job.id };
 }
