@@ -119,6 +119,23 @@ describe("targets service (live DB)", () => {
         baselineValue: 0, goalValue: 90, startAt, deadlineAt,
       });
       expect(await computeCurrentValue(crawlTarget)).toBe(77);
+
+      // gsc_clicks / gsc_impressions read non-"score" fields of the latest
+      // performance-tracking run through the same helper.
+      await db.insert(runs).values({
+        subjectKey: "agent.performance-tracking", category: "agent", action: "daily-pull",
+        siteId: site.id, status: "success", result: { configured: true, clicks: 1234, impressions: 56789 },
+      });
+      const clicksTarget = await createTarget({
+        siteId: site.id, title: "Clicks >= 5000", metric: "gsc_clicks",
+        baselineValue: 0, goalValue: 5000, startAt, deadlineAt,
+      });
+      const imprTarget = await createTarget({
+        siteId: site.id, title: "Impressions >= 100k", metric: "gsc_impressions",
+        baselineValue: 0, goalValue: 100000, startAt, deadlineAt,
+      });
+      expect(await computeCurrentValue(clicksTarget)).toBe(1234);
+      expect(await computeCurrentValue(imprTarget)).toBe(56789);
     } finally {
       await db.delete(runs).where(eq(runs.siteId, site.id));
       await db.delete(targets).where(eq(targets.siteId, site.id));

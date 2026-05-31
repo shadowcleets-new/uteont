@@ -10,6 +10,7 @@ import { optimize } from "./seo-optimization";
 import { runTechnicalSeo } from "./technical-seo";
 import { runContentAudit } from "./content-audit";
 import { runSiteCrawl } from "./site-crawl";
+import { runPerformanceTracking } from "./performance-tracking";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -55,6 +56,13 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     const url = String(payload.url ?? site.domain ?? "").trim();
     if (!url) throw new Error("site-crawl requires a site domain or 'url' in payload");
     const result = await runSiteCrawl(url);
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  "performance-tracking": async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const siteId = Number(site.id ?? payload.siteId ?? 0);
+    if (!Number.isFinite(siteId) || siteId <= 0) throw new Error("performance-tracking requires a site");
+    const result = await runPerformanceTracking(siteId, String(site.domain ?? ""));
     return { result: result as unknown as Record<string, unknown> };
   },
 };

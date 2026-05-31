@@ -116,9 +116,9 @@ export const AGENTS: AgentSpec[] = [
     name: "Performance Tracking Agent",
     sidebarLabel: "11. Performance Tracking",
     description:
-      "Pulls Google Search Console + GA4 + rank data on a daily cron. Read-only feedback loop into Research Agent.",
+      "Pulls real Google Search Console metrics (clicks, impressions, CTR, position) for the site once connected. Feeds the gsc_clicks / gsc_impressions target metrics. Degrades gracefully with a clear prompt until Search Console is connected.",
     runtime: "fn",
-    implemented: false,
+    implemented: true,
   },
   {
     key: "revenue",

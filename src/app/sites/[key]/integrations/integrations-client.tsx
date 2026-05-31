@@ -40,8 +40,30 @@ export function IntegrationsClient({ siteId, initial }: { siteId: number; initia
     });
   };
 
+  const gscConnected = items.some((i) => i.kind === "gsc");
+
   return (
     <div className="space-y-6 text-sm">
+      <section className="border border-black/10 rounded p-4 bg-[#faf7f0]">
+        <h2 className="text-lg mb-1">Google Search Console</h2>
+        <p className="opacity-70 mb-3 text-xs">
+          One-click connect to pull real clicks, impressions, CTR and position into your targets
+          (the <code>gsc_clicks</code> / <code>gsc_impressions</code> metrics). Requires Google OAuth
+          configured on the server.
+        </p>
+        {gscConnected ? (
+          <span className="inline-flex items-center gap-1.5 text-green-700">
+            <span className="font-bold">✓</span> Connected
+          </span>
+        ) : (
+          <a
+            href={`/api/integrations/gsc/connect?siteId=${siteId}`}
+            className="inline-block px-3 py-1.5 border rounded bg-white hover:bg-black/5"
+          >
+            Connect Search Console
+          </a>
+        )}
+      </section>
       <section>
         <h2 className="text-lg mb-2">Existing</h2>
         {items.length === 0 ? <p className="opacity-60">None yet.</p> : (

@@ -33,6 +33,8 @@ export const TARGET_METRICS = [
   { key: "technical_seo_score", label: "Technical SEO score (run the agent)", direction: "increase" },
   { key: "content_score", label: "Content audit score (run the agent)", direction: "increase" },
   { key: "site_structure_score", label: "Site structure score (run the agent)", direction: "increase" },
+  { key: "gsc_clicks", label: "Search Console clicks (28d)", direction: "increase" },
+  { key: "gsc_impressions", label: "Search Console impressions (28d)", direction: "increase" },
   { key: "manual", label: "Manual (I enter the value)", direction: "increase" },
 ] as const;
 
@@ -97,11 +99,14 @@ async function countWhere(
 }
 
 /**
- * Closed-loop metric reader: the score from the newest successful run of
- * `subjectKey` whose stored result carries a numeric `score`. Running that
- * agent is what moves the target.
+ * Closed-loop metric reader: a numeric `field` (default "score") from the newest
+ * successful run of `subjectKey`. Running that agent is what moves the target.
  */
-async function latestSuccessfulRunScore(siteId: number, subjectKey: string): Promise<number> {
+async function latestSuccessfulRunNumber(
+  siteId: number,
+  subjectKey: string,
+  field = "score",
+): Promise<number> {
   const db = getDb();
   const [row] = await db
     .select({ result: runs.result })
@@ -109,8 +114,8 @@ async function latestSuccessfulRunScore(siteId: number, subjectKey: string): Pro
     .where(and(eq(runs.siteId, siteId), eq(runs.subjectKey, subjectKey), eq(runs.status, "success")))
     .orderBy(desc(runs.id))
     .limit(1);
-  const score = (row?.result as { score?: unknown } | null)?.score;
-  return typeof score === "number" ? score : 0;
+  const v = (row?.result as Record<string, unknown> | null)?.[field];
+  return typeof v === "number" ? v : 0;
 }
 
 /** Read the current absolute value for a target's metric (live). */
@@ -125,11 +130,15 @@ export async function computeCurrentValue(target: Target): Promise<number> {
     case "runs_succeeded":
       return countWhere(runs, and(eq(runs.siteId, target.siteId), eq(runs.status, "success")));
     case "technical_seo_score":
-      return latestSuccessfulRunScore(target.siteId, "agent.technical-seo");
+      return latestSuccessfulRunNumber(target.siteId, "agent.technical-seo");
     case "content_score":
-      return latestSuccessfulRunScore(target.siteId, "agent.content-audit");
+      return latestSuccessfulRunNumber(target.siteId, "agent.content-audit");
     case "site_structure_score":
-      return latestSuccessfulRunScore(target.siteId, "agent.site-crawl");
+      return latestSuccessfulRunNumber(target.siteId, "agent.site-crawl");
+    case "gsc_clicks":
+      return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "clicks");
+    case "gsc_impressions":
+      return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "impressions");
     case "manual":
     default:
       return target.manualCurrent ?? 0;
