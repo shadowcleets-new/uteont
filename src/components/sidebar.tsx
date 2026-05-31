@@ -22,6 +22,7 @@ const SECTIONS: NavSection[] = [
     title: "OVERVIEW",
     items: [
       { label: "Dashboard", href: "/" },
+      { label: "Targets", href: "/targets" },
       { label: "Director (Chat)", href: "/chat" },
     ],
   },
