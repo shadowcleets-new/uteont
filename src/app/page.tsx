@@ -3,6 +3,9 @@ import { AgentCard } from "@/components/agent-card";
 import { LiveStatus } from "@/components/live-status";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
+import { listTargetsWithProgress } from "@/lib/services/targets";
+import { TargetMini } from "@/components/target-mini";
+import Link from "next/link";
 import { getDb } from "@/lib/db/client";
 import { kvSettings, sites } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -43,6 +46,13 @@ export default async function DashboardPage() {
     ? await listRuns(undefined, 20, { siteId: activeSiteId })
     : await listRuns(undefined, 20);
 
+  // Active objectives for the selected site (compact summary)
+  const activeTargets = activeSiteId
+    ? (await listTargetsWithProgress(activeSiteId).catch(() => []))
+        .filter((t) => t.status === "active")
+        .slice(0, 5)
+    : [];
+
   // Look up site names without N+1 queries
   const db = getDb();
   const siteIds = [...new Set(recent.map((r) => r.siteId))];
@@ -82,6 +92,22 @@ export default async function DashboardPage() {
           tone={sysStatus.dbReachable ? "ok" : "err"}
         />
       </section>
+
+      {activeTargets.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-bold tracking-wider text-[#9a988e]">OBJECTIVES</div>
+            <Link href="/targets" className="text-[11px] text-[#d97757] hover:underline">
+              All targets →
+            </Link>
+          </div>
+          <div className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden">
+            {activeTargets.map((t) => (
+              <TargetMini key={t.id} t={t} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-8">
         <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">
