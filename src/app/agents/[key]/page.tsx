@@ -10,6 +10,7 @@ import type { PillState } from "@/lib/theme";
 import { RunAgentButton } from "./run-agent-button";
 import { TechnicalSeoReport } from "./technical-seo-report";
 import type { TechnicalSeoResult } from "@/lib/agent-runners/technical-seo";
+import { LiveStatus } from "@/components/live-status";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,12 @@ export default async function AgentPage({ params }: PageProps) {
       <p className="text-[13px] text-[#6b6a64] font-serif mb-6">
         {agent.description}
       </p>
+
+      {stats.running > 0 && (
+        <div className="mb-4">
+          <LiveStatus runningCount={stats.running} />
+        </div>
+      )}
 
       <div className="flex gap-3 mb-6 items-center">
         <RunAgentButton agentKey={agent.key} disabled={!agent.implemented} />

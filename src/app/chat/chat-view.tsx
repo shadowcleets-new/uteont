@@ -44,6 +44,9 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
   // Sync chosenSiteId with activeSiteId once loaded (only if user hasn't chosen yet)
   useEffect(() => {
     if (chosenSiteId === null && activeSiteId !== null) {
+      // One-time default of the dropdown to the active site — a guarded sync,
+      // not the cascading render the rule warns about.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChosenSiteId(activeSiteId);
     }
   }, [activeSiteId, chosenSiteId]);
@@ -51,6 +54,9 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
   // Load history when conversationId changes
   useEffect(() => {
     if (!conversationId) {
+      // Reset the open-conversation view when none is selected — a
+      // dependency-change reset, not a render cascade.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHistory([]);
       setConvSiteId(null);
       return;

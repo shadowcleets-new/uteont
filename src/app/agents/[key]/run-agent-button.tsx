@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useActiveSite } from "@/lib/hooks/use-active-site";
 
 interface RunAgentButtonProps {
@@ -10,14 +10,10 @@ interface RunAgentButtonProps {
 
 export function RunAgentButton({ agentKey, disabled }: RunAgentButtonProps) {
   const { activeSiteId, sites } = useActiveSite();
-  const [siteId, setSiteId] = useState<number | "">("");
-
-  // Pre-select the active site once it loads
-  useEffect(() => {
-    if (siteId === "" && activeSiteId !== null) {
-      setSiteId(activeSiteId);
-    }
-  }, [activeSiteId, siteId]);
+  // Derive the selected site from the active site; once the user picks one
+  // explicitly, their override wins. No effect-sync needed.
+  const [override, setOverride] = useState<number | "" | null>(null);
+  const siteId: number | "" = override ?? activeSiteId ?? "";
 
   if (disabled) {
     return (
@@ -40,7 +36,7 @@ export function RunAgentButton({ agentKey, disabled }: RunAgentButtonProps) {
           name="siteId"
           className="border border-[#e8e6dc] rounded px-2 py-1 text-sm bg-white text-[#141413]"
           value={siteId}
-          onChange={(e) => setSiteId(e.target.value ? Number(e.target.value) : "")}
+          onChange={(e) => setOverride(e.target.value ? Number(e.target.value) : "")}
         >
           <option value="">— choose a site —</option>
           {sites.map((s) => (

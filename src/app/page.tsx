@@ -1,5 +1,6 @@
 import { AGENTS } from "@/lib/agents/registry";
 import { AgentCard } from "@/components/agent-card";
+import { LiveStatus } from "@/components/live-status";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import { getDb } from "@/lib/db/client";
@@ -52,6 +53,7 @@ export default async function DashboardPage() {
   const siteById = new Map(siteRows.map((s) => [s.id, s]));
 
   const totalRuns = Object.values(stats).reduce((acc, s) => acc + s.totalRuns, 0);
+  const runningCount = Object.values(stats).reduce((acc, s) => acc + (s.running ?? 0), 0);
   const implementedAgents = AGENTS.filter((a) => a.implemented).length;
 
   return (
@@ -63,6 +65,12 @@ export default async function DashboardPage() {
         Status of all 10 agents in the pipeline plus shared infrastructure.
         Click any card to jump into that agent.
       </p>
+
+      {runningCount > 0 && (
+        <div className="mb-6">
+          <LiveStatus runningCount={runningCount} />
+        </div>
+      )}
 
       {/* At-a-glance numbers */}
       <section className="grid grid-cols-3 gap-3 mb-8">
