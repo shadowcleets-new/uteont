@@ -7,6 +7,7 @@
 
 import { validate } from "./qa";
 import { optimize } from "./seo-optimization";
+import { runTechnicalSeo } from "./technical-seo";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -31,6 +32,13 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     if (!article) throw new Error("seo-optimization requires 'article' in payload");
     const targetKeyword = payload.targetKeyword ? String(payload.targetKeyword) : undefined;
     const result = optimize({ article, targetKeyword });
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  "technical-seo": async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const url = String(payload.url ?? site.domain ?? "").trim();
+    if (!url) throw new Error("technical-seo requires a site domain or 'url' in payload");
+    const result = await runTechnicalSeo(url);
     return { result: result as unknown as Record<string, unknown> };
   },
 };

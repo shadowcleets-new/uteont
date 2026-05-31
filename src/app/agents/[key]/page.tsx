@@ -8,6 +8,8 @@ import { listRuns } from "@/lib/services/runs";
 import type { Run } from "@/lib/db/schema";
 import type { PillState } from "@/lib/theme";
 import { RunAgentButton } from "./run-agent-button";
+import { TechnicalSeoReport } from "./technical-seo-report";
+import type { TechnicalSeoResult } from "@/lib/agent-runners/technical-seo";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,13 @@ export default async function AgentPage({ params }: PageProps) {
   ]);
 
   const exportTarget = exportTargetFor(agent);
+
+  const latestAudit =
+    key === "technical-seo"
+      ? (recentRuns.find(
+          (r) => r.result && Array.isArray((r.result as { checks?: unknown }).checks),
+        )?.result as unknown as TechnicalSeoResult | undefined)
+      : undefined;
 
   let pill: PillState = "Idle";
   if (!agent.implemented) pill = "Planned";
@@ -60,6 +69,8 @@ export default async function AgentPage({ params }: PageProps) {
           )}
         </div>
       </div>
+
+      {latestAudit && <TechnicalSeoReport result={latestAudit} />}
 
       {/* STATS */}
       <section className="mb-6">

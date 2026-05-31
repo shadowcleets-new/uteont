@@ -71,9 +71,9 @@ export const AGENTS: AgentSpec[] = [
     name: "Technical SEO Agent",
     sidebarLabel: "6. Technical SEO",
     description:
-      "Handles sitemap, robots.txt, canonical, hreflang, Core Web Vitals. Site-wide changes gate at Major Changes approval.",
+      "Deterministic technical-SEO audit of the live site: HTTPS, title/meta description, mobile viewport, canonical, single H1, JSON-LD, Open Graph, image alt coverage, robots.txt + sitemap.xml. Reads only public URLs — no credentials needed.",
     runtime: "fn",
-    implemented: false,
+    implemented: true,
   },
   {
     key: "publishing",

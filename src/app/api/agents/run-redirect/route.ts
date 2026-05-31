@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runAgent } from "@/lib/services/agents";
+import { getSiteById } from "@/lib/services/sites";
 
 /**
  * Form-friendly trigger for the Run button on the agent page.
@@ -25,7 +26,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.redirect(url, 303);
   }
   try {
-    await runAgent({ agentKey, siteId });
+    const site = await getSiteById(siteId);
+    if (!site) {
+      const url = new URL(`/agents/${agentKey}?error=${encodeURIComponent("site not found")}`, req.url);
+      return NextResponse.redirect(url, 303);
+    }
+    const siteSnapshot = {
+      id: site.id, key: site.key, name: site.name, domain: site.domain, locale: site.locale,
+      niche: site.niche, audience: site.audience, voiceGuide: site.voiceGuide,
+      contentPillars: site.contentPillars, bannedPhrases: site.bannedPhrases,
+    };
+    await runAgent({ agentKey, siteId, payload: { site: siteSnapshot } });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const url = new URL(`/agents/${agentKey}?error=${encodeURIComponent(msg)}`, req.url);
