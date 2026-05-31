@@ -398,6 +398,37 @@ export const resultCache = pgTable(
   }),
 );
 
+/**
+ * #2 Target Control Panel: an absolute, time-boxed objective per site
+ * (baseline -> goal by a deadline). `metric` selects how the current value is
+ * measured (a computed pipeline metric, or 'manual'); the trajectory engine
+ * (services/target-progress.ts) turns it into the progress vector.
+ */
+export const targets = pgTable(
+  "targets",
+  {
+    id:            serial("id").primaryKey(),
+    siteId:        integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    title:         text("title").notNull(),
+    metric:        text("metric").notNull(),
+      // articles_published | articles_total | keywords_approved | runs_succeeded | manual
+    direction:     text("direction").notNull().default("increase"), // increase | decrease
+    baselineValue: real("baseline_value").notNull(),
+    goalValue:     real("goal_value").notNull(),
+    manualCurrent: real("manual_current"), // current value when metric='manual'
+    startAt:       timestamp("start_at", { withTimezone: true }).notNull().defaultNow(),
+    deadlineAt:    timestamp("deadline_at", { withTimezone: true }).notNull(),
+    status:        text("status").notNull().default("active"),
+      // active | hit | missed | paused | archived
+    createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:     timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite:   index("targets_site_idx").on(t.siteId),
+    byStatus: index("targets_status_idx").on(t.status),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -415,3 +446,4 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type ResultCache = typeof resultCache.$inferSelect;
+export type Target = typeof targets.$inferSelect;

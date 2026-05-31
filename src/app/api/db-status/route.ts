@@ -34,6 +34,7 @@ export async function GET() {
     "runs",
     "site_integrations",
     "sites",
+    "targets",
   ];
 
   try {
