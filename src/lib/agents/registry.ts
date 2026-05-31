@@ -1,5 +1,5 @@
 /**
- * Agent registry — the 10 agents in the UTEONT pipeline.
+ * Agent registry — the agents in the UTEONT pipeline.
  *
  * `implemented` indicates whether a runner currently exists (either as a
  * Vercel serverless function or as a job picked up by the worker).
@@ -76,9 +76,18 @@ export const AGENTS: AgentSpec[] = [
     implemented: true,
   },
   {
+    key: "content-audit",
+    name: "Content Audit Agent",
+    sidebarLabel: "7. Content Audit",
+    description:
+      "Deterministic on-page content audit of the live site: content depth (word count), heading structure, internal linking, scannability (lists/tables), readability, and imagery. Reads only public HTML — no credentials needed.",
+    runtime: "fn",
+    implemented: true,
+  },
+  {
     key: "publishing",
     name: "Publishing Agent",
-    sidebarLabel: "7. Publishing",
+    sidebarLabel: "8. Publishing",
     description:
       "Pushes content to staging only. Production publish requires explicit human approval at Production gate.",
     runtime: "fn",
@@ -87,7 +96,7 @@ export const AGENTS: AgentSpec[] = [
   {
     key: "backlink",
     name: "Backlink / Outreach Agent",
-    sidebarLabel: "8. Backlink / Outreach",
+    sidebarLabel: "9. Backlink / Outreach",
     description:
       "Drafts personalized outreach emails via Gemini (free tier). Never sends — all messages require explicit human approval before going out.",
     runtime: "worker",
@@ -96,7 +105,7 @@ export const AGENTS: AgentSpec[] = [
   {
     key: "performance-tracking",
     name: "Performance Tracking Agent",
-    sidebarLabel: "9. Performance Tracking",
+    sidebarLabel: "10. Performance Tracking",
     description:
       "Pulls Google Search Console + GA4 + rank data on a daily cron. Read-only feedback loop into Research Agent.",
     runtime: "fn",
@@ -105,7 +114,7 @@ export const AGENTS: AgentSpec[] = [
   {
     key: "revenue",
     name: "Revenue Optimization Agent",
-    sidebarLabel: "10. Revenue Optimization",
+    sidebarLabel: "11. Revenue Optimization",
     description:
       "Suggests CTA / affiliate / internal-link tweaks based on performance data. Routed through Major Changes gate.",
     runtime: "fn",

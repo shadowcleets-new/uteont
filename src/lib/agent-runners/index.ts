@@ -8,6 +8,7 @@
 import { validate } from "./qa";
 import { optimize } from "./seo-optimization";
 import { runTechnicalSeo } from "./technical-seo";
+import { runContentAudit } from "./content-audit";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -39,6 +40,13 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     const url = String(payload.url ?? site.domain ?? "").trim();
     if (!url) throw new Error("technical-seo requires a site domain or 'url' in payload");
     const result = await runTechnicalSeo(url);
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  "content-audit": async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const url = String(payload.url ?? site.domain ?? "").trim();
+    if (!url) throw new Error("content-audit requires a site domain or 'url' in payload");
+    const result = await runContentAudit(url);
     return { result: result as unknown as Record<string, unknown> };
   },
 };

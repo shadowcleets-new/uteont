@@ -10,6 +10,8 @@ import type { PillState } from "@/lib/theme";
 import { RunAgentButton } from "./run-agent-button";
 import { TechnicalSeoReport } from "./technical-seo-report";
 import type { TechnicalSeoResult } from "@/lib/agent-runners/technical-seo";
+import { ContentAuditReport } from "./content-audit-report";
+import type { ContentAuditResult } from "@/lib/agent-runners/content-audit";
 import { LiveStatus } from "@/components/live-status";
 
 export const dynamic = "force-dynamic";
@@ -30,12 +32,15 @@ export default async function AgentPage({ params }: PageProps) {
 
   const exportTarget = exportTargetFor(agent);
 
-  const latestAudit =
-    key === "technical-seo"
-      ? (recentRuns.find(
-          (r) => r.result && Array.isArray((r.result as { checks?: unknown }).checks),
-        )?.result as unknown as TechnicalSeoResult | undefined)
-      : undefined;
+  // Both live audits store a `checks` array + numeric `score`; pick the freshest
+  // such run and render the report that matches this agent.
+  const latestAuditResult = recentRuns.find(
+    (r) => r.result && Array.isArray((r.result as { checks?: unknown }).checks),
+  )?.result;
+  const latestTechAudit =
+    key === "technical-seo" ? (latestAuditResult as unknown as TechnicalSeoResult | undefined) : undefined;
+  const latestContentAudit =
+    key === "content-audit" ? (latestAuditResult as unknown as ContentAuditResult | undefined) : undefined;
 
   let pill: PillState = "Idle";
   if (!agent.implemented) pill = "Planned";
@@ -77,7 +82,8 @@ export default async function AgentPage({ params }: PageProps) {
         </div>
       </div>
 
-      {latestAudit && <TechnicalSeoReport result={latestAudit} />}
+      {latestTechAudit && <TechnicalSeoReport result={latestTechAudit} />}
+      {latestContentAudit && <ContentAuditReport result={latestContentAudit} />}
 
       {/* STATS */}
       <section className="mb-6">

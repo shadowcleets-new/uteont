@@ -75,7 +75,7 @@ export default async function DashboardPage() {
         UTEONT
       </h1>
       <p className="text-[13px] text-[#6b6a64] font-serif mb-8">
-        Status of all 10 agents in the pipeline plus shared infrastructure.
+        Status of all {AGENTS.length} agents in the pipeline plus shared infrastructure.
         Click any card to jump into that agent.
       </p>
 

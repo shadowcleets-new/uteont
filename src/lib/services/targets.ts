@@ -31,6 +31,7 @@ export const TARGET_METRICS = [
   { key: "keywords_approved", label: "Keywords approved", direction: "increase" },
   { key: "runs_succeeded", label: "Successful agent runs", direction: "increase" },
   { key: "technical_seo_score", label: "Technical SEO score (run the agent)", direction: "increase" },
+  { key: "content_score", label: "Content audit score (run the agent)", direction: "increase" },
   { key: "manual", label: "Manual (I enter the value)", direction: "increase" },
 ] as const;
 
@@ -94,6 +95,23 @@ async function countWhere(
   return row?.n ?? 0;
 }
 
+/**
+ * Closed-loop metric reader: the score from the newest successful run of
+ * `subjectKey` whose stored result carries a numeric `score`. Running that
+ * agent is what moves the target.
+ */
+async function latestSuccessfulRunScore(siteId: number, subjectKey: string): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .select({ result: runs.result })
+    .from(runs)
+    .where(and(eq(runs.siteId, siteId), eq(runs.subjectKey, subjectKey), eq(runs.status, "success")))
+    .orderBy(desc(runs.id))
+    .limit(1);
+  const score = (row?.result as { score?: unknown } | null)?.score;
+  return typeof score === "number" ? score : 0;
+}
+
 /** Read the current absolute value for a target's metric (live). */
 export async function computeCurrentValue(target: Target): Promise<number> {
   switch (target.metric) {
@@ -105,25 +123,10 @@ export async function computeCurrentValue(target: Target): Promise<number> {
       return countWhere(keywords, and(eq(keywords.siteId, target.siteId), eq(keywords.status, "approved")));
     case "runs_succeeded":
       return countWhere(runs, and(eq(runs.siteId, target.siteId), eq(runs.status, "success")));
-    case "technical_seo_score": {
-      // Closed loop: the latest successful Technical SEO audit's score IS the
-      // current value, so running that agent moves this target's progress.
-      const db = getDb();
-      const [row] = await db
-        .select({ result: runs.result })
-        .from(runs)
-        .where(
-          and(
-            eq(runs.siteId, target.siteId),
-            eq(runs.subjectKey, "agent.technical-seo"),
-            eq(runs.status, "success"),
-          ),
-        )
-        .orderBy(desc(runs.id))
-        .limit(1);
-      const score = (row?.result as { score?: unknown } | null)?.score;
-      return typeof score === "number" ? score : 0;
-    }
+    case "technical_seo_score":
+      return latestSuccessfulRunScore(target.siteId, "agent.technical-seo");
+    case "content_score":
+      return latestSuccessfulRunScore(target.siteId, "agent.content-audit");
     case "manual":
     default:
       return target.manualCurrent ?? 0;

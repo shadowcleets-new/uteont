@@ -97,6 +97,17 @@ describe("targets service (live DB)", () => {
         siteId: site.id, status: "failure", result: { score: 99 },
       });
       expect(await computeCurrentValue(target)).toBe(85);
+
+      // content_score reads agent.content-audit runs through the same helper.
+      await db.insert(runs).values({
+        subjectKey: "agent.content-audit", category: "agent", action: "content-audit",
+        siteId: site.id, status: "success", result: { score: 64 },
+      });
+      const contentTarget = await createTarget({
+        siteId: site.id, title: "Content >= 80", metric: "content_score",
+        baselineValue: 0, goalValue: 80, startAt, deadlineAt,
+      });
+      expect(await computeCurrentValue(contentTarget)).toBe(64);
     } finally {
       await db.delete(runs).where(eq(runs.siteId, site.id));
       await db.delete(targets).where(eq(targets.siteId, site.id));
