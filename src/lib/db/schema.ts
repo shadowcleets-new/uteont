@@ -429,6 +429,25 @@ export const targets = pgTable(
   }),
 );
 
+/**
+ * target_snapshots — a time series of a target's measured value, so the control
+ * panel can draw a real trajectory (slope, plateau, slip) from observed points
+ * instead of a baseline→current straight line. Captured opportunistically when
+ * targets are read (debounced).
+ */
+export const targetSnapshots = pgTable(
+  "target_snapshots",
+  {
+    id:         serial("id").primaryKey(),
+    targetId:   integer("target_id").notNull().references(() => targets.id, { onDelete: "cascade" }),
+    value:      real("value").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byTarget: index("target_snapshots_target_idx").on(t.targetId),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -447,3 +466,4 @@ export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type ResultCache = typeof resultCache.$inferSelect;
 export type Target = typeof targets.$inferSelect;
+export type TargetSnapshot = typeof targetSnapshots.$inferSelect;

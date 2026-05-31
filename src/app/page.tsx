@@ -4,6 +4,7 @@ import { LiveStatus } from "@/components/live-status";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import { listTargetsWithProgress } from "@/lib/services/targets";
+import { captureSnapshots } from "@/lib/services/target-snapshots";
 import { pickNextAction } from "@/lib/services/next-action";
 import { TargetMini } from "@/components/target-mini";
 import { NextActionCard } from "@/components/next-action-card";
@@ -55,6 +56,11 @@ export default async function DashboardPage() {
     : [];
   const activeTargets = allTargets.filter((t) => t.status === "active").slice(0, 5);
   const nextAction = pickNextAction(allTargets);
+
+  // Accrue trajectory history from dashboard loads too (debounced, never throws).
+  if (allTargets.length > 0) {
+    await captureSnapshots(allTargets.map((t) => ({ id: t.id, value: t.current })));
+  }
 
   // Look up site names without N+1 queries
   const db = getDb();

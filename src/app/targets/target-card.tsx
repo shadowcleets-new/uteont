@@ -1,5 +1,7 @@
 import type { TargetWithProgress } from "@/lib/services/targets";
 import { TARGET_METRICS } from "@/lib/services/targets";
+import type { TrendPoint } from "@/lib/services/target-history";
+import { TargetSparkline } from "@/components/target-sparkline";
 import { deleteTargetAction } from "./actions";
 
 const STATUS: Record<string, { bg: string; fg: string; label: string; bar: string }> = {
@@ -20,7 +22,7 @@ function metricLabel(metric: string): string {
   return TARGET_METRICS.find((m) => m.key === metric)?.label ?? metric;
 }
 
-export function TargetCard({ t }: { t: TargetWithProgress }) {
+export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history?: TrendPoint[] }) {
   const p = t.progress;
   const s = STATUS[p.status] ?? STATUS["off-track"];
   const fillPct = clamp(p.progressPct, 0, 100);
@@ -61,6 +63,11 @@ export function TargetCard({ t }: { t: TargetWithProgress }) {
         <span><b className="text-[#141413]">{Math.max(0, Math.round(p.daysRemaining))}</b> days left</span>
         <span>projected <b className="text-[#141413]">{Math.round(p.projectedAtDeadline)}</b></span>
         <span>pace <b className="text-[#141413]">{p.actualPerDay.toFixed(2)}</b>/day vs {p.requiredPerDay.toFixed(2)} needed</span>
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-[#f3f1ea] flex items-center justify-between gap-3">
+        <span className="text-[10px] font-bold tracking-wider text-[#9a988e]">TRAJECTORY</span>
+        <TargetSparkline points={history} />
       </div>
 
       <form action={deleteTargetAction} className="mt-3">

@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db/client";
 import { kvSettings, sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { listTargetsWithProgress } from "@/lib/services/targets";
+import { captureSnapshots, snapshotsByTarget } from "@/lib/services/target-snapshots";
 import { TargetCard } from "./target-card";
 import { TargetCreateForm } from "./target-create-form";
 
@@ -54,6 +55,11 @@ export default async function TargetsPage() {
   const [site] = await db.select().from(sites).where(eq(sites.id, activeSiteId)).limit(1);
   const items = await listTargetsWithProgress(activeSiteId);
 
+  // Record today's observed values (debounced) so the trajectory accrues, then
+  // read the per-target series back for the sparklines.
+  await captureSnapshots(items.map((t) => ({ id: t.id, value: t.current })));
+  const history = await snapshotsByTarget(items.map((t) => t.id)).catch(() => new Map());
+
   return (
     <div className="px-9 py-8 max-w-[1100px]">
       <Header siteName={site?.name} />
@@ -61,7 +67,7 @@ export default async function TargetsPage() {
       {items.length === 0 ? (
         <EmptyCard text="No targets yet — set one above, then point the agents at it and watch the vector move." />
       ) : (
-        <div>{items.map((t) => <TargetCard key={t.id} t={t} />)}</div>
+        <div>{items.map((t) => <TargetCard key={t.id} t={t} history={history.get(t.id) ?? []} />)}</div>
       )}
     </div>
   );
