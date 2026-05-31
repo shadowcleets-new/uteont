@@ -30,6 +30,7 @@ export const TARGET_METRICS = [
   { key: "articles_total", label: "Articles drafted (any status)", direction: "increase" },
   { key: "keywords_approved", label: "Keywords approved", direction: "increase" },
   { key: "runs_succeeded", label: "Successful agent runs", direction: "increase" },
+  { key: "technical_seo_score", label: "Technical SEO score (run the agent)", direction: "increase" },
   { key: "manual", label: "Manual (I enter the value)", direction: "increase" },
 ] as const;
 
@@ -104,6 +105,25 @@ export async function computeCurrentValue(target: Target): Promise<number> {
       return countWhere(keywords, and(eq(keywords.siteId, target.siteId), eq(keywords.status, "approved")));
     case "runs_succeeded":
       return countWhere(runs, and(eq(runs.siteId, target.siteId), eq(runs.status, "success")));
+    case "technical_seo_score": {
+      // Closed loop: the latest successful Technical SEO audit's score IS the
+      // current value, so running that agent moves this target's progress.
+      const db = getDb();
+      const [row] = await db
+        .select({ result: runs.result })
+        .from(runs)
+        .where(
+          and(
+            eq(runs.siteId, target.siteId),
+            eq(runs.subjectKey, "agent.technical-seo"),
+            eq(runs.status, "success"),
+          ),
+        )
+        .orderBy(desc(runs.id))
+        .limit(1);
+      const score = (row?.result as { score?: unknown } | null)?.score;
+      return typeof score === "number" ? score : 0;
+    }
     case "manual":
     default:
       return target.manualCurrent ?? 0;
