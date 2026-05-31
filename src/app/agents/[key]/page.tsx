@@ -12,6 +12,8 @@ import { TechnicalSeoReport } from "./technical-seo-report";
 import type { TechnicalSeoResult } from "@/lib/agent-runners/technical-seo";
 import { ContentAuditReport } from "./content-audit-report";
 import type { ContentAuditResult } from "@/lib/agent-runners/content-audit";
+import { SiteCrawlReport } from "./site-crawl-report";
+import type { SiteCrawlResult } from "@/lib/agent-runners/site-crawl";
 import { LiveStatus } from "@/components/live-status";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +43,8 @@ export default async function AgentPage({ params }: PageProps) {
     key === "technical-seo" ? (latestAuditResult as unknown as TechnicalSeoResult | undefined) : undefined;
   const latestContentAudit =
     key === "content-audit" ? (latestAuditResult as unknown as ContentAuditResult | undefined) : undefined;
+  const latestSiteCrawl =
+    key === "site-crawl" ? (latestAuditResult as unknown as SiteCrawlResult | undefined) : undefined;
 
   let pill: PillState = "Idle";
   if (!agent.implemented) pill = "Planned";
@@ -84,6 +88,7 @@ export default async function AgentPage({ params }: PageProps) {
 
       {latestTechAudit && <TechnicalSeoReport result={latestTechAudit} />}
       {latestContentAudit && <ContentAuditReport result={latestContentAudit} />}
+      {latestSiteCrawl && <SiteCrawlReport result={latestSiteCrawl} />}
 
       {/* STATS */}
       <section className="mb-6">

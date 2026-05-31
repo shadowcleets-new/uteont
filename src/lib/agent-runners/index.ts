@@ -9,6 +9,7 @@ import { validate } from "./qa";
 import { optimize } from "./seo-optimization";
 import { runTechnicalSeo } from "./technical-seo";
 import { runContentAudit } from "./content-audit";
+import { runSiteCrawl } from "./site-crawl";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -47,6 +48,13 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     const url = String(payload.url ?? site.domain ?? "").trim();
     if (!url) throw new Error("content-audit requires a site domain or 'url' in payload");
     const result = await runContentAudit(url);
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  "site-crawl": async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const url = String(payload.url ?? site.domain ?? "").trim();
+    if (!url) throw new Error("site-crawl requires a site domain or 'url' in payload");
+    const result = await runSiteCrawl(url);
     return { result: result as unknown as Record<string, unknown> };
   },
 };

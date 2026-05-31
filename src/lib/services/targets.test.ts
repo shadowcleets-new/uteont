@@ -108,6 +108,17 @@ describe("targets service (live DB)", () => {
         baselineValue: 0, goalValue: 80, startAt, deadlineAt,
       });
       expect(await computeCurrentValue(contentTarget)).toBe(64);
+
+      // site_structure_score reads agent.site-crawl runs through the same helper.
+      await db.insert(runs).values({
+        subjectKey: "agent.site-crawl", category: "agent", action: "site-crawl",
+        siteId: site.id, status: "success", result: { score: 77 },
+      });
+      const crawlTarget = await createTarget({
+        siteId: site.id, title: "Structure >= 90", metric: "site_structure_score",
+        baselineValue: 0, goalValue: 90, startAt, deadlineAt,
+      });
+      expect(await computeCurrentValue(crawlTarget)).toBe(77);
     } finally {
       await db.delete(runs).where(eq(runs.siteId, site.id));
       await db.delete(targets).where(eq(targets.siteId, site.id));

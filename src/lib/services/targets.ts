@@ -32,6 +32,7 @@ export const TARGET_METRICS = [
   { key: "runs_succeeded", label: "Successful agent runs", direction: "increase" },
   { key: "technical_seo_score", label: "Technical SEO score (run the agent)", direction: "increase" },
   { key: "content_score", label: "Content audit score (run the agent)", direction: "increase" },
+  { key: "site_structure_score", label: "Site structure score (run the agent)", direction: "increase" },
   { key: "manual", label: "Manual (I enter the value)", direction: "increase" },
 ] as const;
 
@@ -127,6 +128,8 @@ export async function computeCurrentValue(target: Target): Promise<number> {
       return latestSuccessfulRunScore(target.siteId, "agent.technical-seo");
     case "content_score":
       return latestSuccessfulRunScore(target.siteId, "agent.content-audit");
+    case "site_structure_score":
+      return latestSuccessfulRunScore(target.siteId, "agent.site-crawl");
     case "manual":
     default:
       return target.manualCurrent ?? 0;

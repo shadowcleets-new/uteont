@@ -85,9 +85,18 @@ export const AGENTS: AgentSpec[] = [
     implemented: true,
   },
   {
+    key: "site-crawl",
+    name: "Site Crawl Agent",
+    sidebarLabel: "8. Site Crawl",
+    description:
+      "Crawls the site's own sitemap (or homepage links), builds the internal link graph, and flags structural SEO problems: orphan pages nothing links to and thin-linking pages. Reads only public HTML — no credentials needed.",
+    runtime: "fn",
+    implemented: true,
+  },
+  {
     key: "publishing",
     name: "Publishing Agent",
-    sidebarLabel: "8. Publishing",
+    sidebarLabel: "9. Publishing",
     description:
       "Pushes content to staging only. Production publish requires explicit human approval at Production gate.",
     runtime: "fn",
@@ -96,7 +105,7 @@ export const AGENTS: AgentSpec[] = [
   {
     key: "backlink",
     name: "Backlink / Outreach Agent",
-    sidebarLabel: "9. Backlink / Outreach",
+    sidebarLabel: "10. Backlink / Outreach",
     description:
       "Drafts personalized outreach emails via Gemini (free tier). Never sends — all messages require explicit human approval before going out.",
     runtime: "worker",
@@ -105,7 +114,7 @@ export const AGENTS: AgentSpec[] = [
   {
     key: "performance-tracking",
     name: "Performance Tracking Agent",
-    sidebarLabel: "10. Performance Tracking",
+    sidebarLabel: "11. Performance Tracking",
     description:
       "Pulls Google Search Console + GA4 + rank data on a daily cron. Read-only feedback loop into Research Agent.",
     runtime: "fn",
@@ -114,7 +123,7 @@ export const AGENTS: AgentSpec[] = [
   {
     key: "revenue",
     name: "Revenue Optimization Agent",
-    sidebarLabel: "11. Revenue Optimization",
+    sidebarLabel: "12. Revenue Optimization",
     description:
       "Suggests CTA / affiliate / internal-link tweaks based on performance data. Routed through Major Changes gate.",
     runtime: "fn",
