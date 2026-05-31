@@ -4,7 +4,9 @@ import { LiveStatus } from "@/components/live-status";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import { listTargetsWithProgress } from "@/lib/services/targets";
+import { pickNextAction } from "@/lib/services/next-action";
 import { TargetMini } from "@/components/target-mini";
+import { NextActionCard } from "@/components/next-action-card";
 import Link from "next/link";
 import { getDb } from "@/lib/db/client";
 import { kvSettings, sites } from "@/lib/db/schema";
@@ -46,12 +48,13 @@ export default async function DashboardPage() {
     ? await listRuns(undefined, 20, { siteId: activeSiteId })
     : await listRuns(undefined, 20);
 
-  // Active objectives for the selected site (compact summary)
-  const activeTargets = activeSiteId
-    ? (await listTargetsWithProgress(activeSiteId).catch(() => []))
-        .filter((t) => t.status === "active")
-        .slice(0, 5)
+  // Objectives for the selected site: derive both the display list and the
+  // single recommended action from the full set (so the nudge isn't capped).
+  const allTargets = activeSiteId
+    ? await listTargetsWithProgress(activeSiteId).catch(() => [])
     : [];
+  const activeTargets = allTargets.filter((t) => t.status === "active").slice(0, 5);
+  const nextAction = pickNextAction(allTargets);
 
   // Look up site names without N+1 queries
   const db = getDb();
@@ -79,6 +82,12 @@ export default async function DashboardPage() {
       {runningCount > 0 && (
         <div className="mb-6">
           <LiveStatus runningCount={runningCount} />
+        </div>
+      )}
+
+      {nextAction && (
+        <div className="mb-8">
+          <NextActionCard action={nextAction} />
         </div>
       )}
 
