@@ -98,7 +98,7 @@ Always return JSON with this exact shape, nothing else:
 - intent="report": text is a results summary or next-step suggestion. actions: optional follow-ups
 `;
 
-export function buildSystemPrompt(site: Site | null): string {
+export function buildSystemPrompt(site: Site | null, targetsBlock = ""): string {
   if (!site) {
     return [
       BASE_SYSTEM_PROMPT,
@@ -127,7 +127,7 @@ export function buildSystemPrompt(site: Site | null): string {
     "",
     "All proposed work is for this site unless the user explicitly redirects to a different one. When dispatching agents, the site context above flows to the worker in the job payload — you don't need to repeat it in args.",
   ].filter(Boolean).join("\n");
-  return [siteBlock, "", BASE_SYSTEM_PROMPT].join("\n");
+  return [siteBlock, ...(targetsBlock ? ["", targetsBlock] : []), "", BASE_SYSTEM_PROMPT].join("\n");
 }
 
 // --- types ----------------------------------------------------------------
@@ -211,7 +211,16 @@ export async function runDirectorTurn(
 
   // 3. Ask Gemini
   const model = pickModel("director");
-  const sysPrompt = buildSystemPrompt(site);
+  let targetsBlock = "";
+  if (site) {
+    try {
+      const { listTargetsWithProgress, formatTargetsForPrompt } = await import("./targets");
+      targetsBlock = formatTargetsForPrompt(await listTargetsWithProgress(site.id));
+    } catch (e) {
+      console.warn("director: targets fetch failed", e);
+    }
+  }
+  const sysPrompt = buildSystemPrompt(site, targetsBlock);
   const traceId = newTraceId();
   // Best-effort explicit context cache for the (stable) system prompt; null =>
   // inline systemInstruction (free tier / under min tokens / kill-switch).

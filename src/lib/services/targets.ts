@@ -61,6 +61,29 @@ export type TargetWithProgress = Target & {
   progress: TargetProgress;
 };
 
+/**
+ * Compact summary of a site's ACTIVE targets for injection into the Director's
+ * system prompt, so the planner knows the live objectives + their status and
+ * can prioritize work that moves a slipping target. Returns "" when there are
+ * no active targets.
+ */
+export function formatTargetsForPrompt(
+  targets: Array<{ title: string; status: string; progress: TargetProgress }>,
+): string {
+  const live = targets.filter((t) => t.status === "active");
+  if (live.length === 0) return "";
+  const lines = live.slice(0, 8).map((t) => {
+    const p = t.progress;
+    const days = Math.max(0, Math.round(p.daysRemaining));
+    return `- "${t.title}" — ${Math.round(p.progressPct)}% of goal, ${p.status.toUpperCase()}, ${days} day(s) left (pace ${p.actualPerDay.toFixed(2)}/day vs ${p.requiredPerDay.toFixed(2)} needed)`;
+  });
+  return [
+    "ACTIVE TARGETS (objectives for this site — factor these into every plan)",
+    ...lines,
+    "When the user asks what to do next, prioritize work that moves an OFF-TRACK or AT-RISK target toward its goal.",
+  ].join("\n");
+}
+
 async function countWhere(
   table: typeof articles | typeof keywords | typeof runs,
   cond: ReturnType<typeof and> | ReturnType<typeof eq>,
