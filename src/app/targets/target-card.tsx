@@ -2,7 +2,14 @@ import type { TargetWithProgress } from "@/lib/services/targets";
 import { TARGET_METRICS } from "@/lib/services/targets";
 import { projectionConfidence, type TrendPoint } from "@/lib/services/target-history";
 import { TargetSparkline } from "@/components/target-sparkline";
-import { deleteTargetAction } from "./actions";
+import { deleteTargetAction, updateTargetAction, setTargetStatusAction, updateManualCurrentAction } from "./actions";
+
+const editCls = "w-full rounded border border-[#e0ddd2] bg-white px-2 py-1 text-[12px] mt-0.5";
+
+function toDateInput(d: unknown): string {
+  const t = new Date(d as string).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "";
+}
 
 const STATUS: Record<string, { bg: string; fg: string; label: string; bar: string }> = {
   hit:         { bg: "#e7efe0", fg: "#4a6b2f", label: "HIT",       bar: "#9bb87a" },
@@ -58,12 +65,19 @@ export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history
             <b className="text-[#141413]">{t.current}</b> / {t.goalValue} · {metricLabel(t.metric)}
           </p>
         </div>
-        <span
-          className="shrink-0 text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full"
-          style={{ background: s.bg, color: s.fg }}
-        >
-          {s.label}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {t.status !== "active" && (
+            <span className="text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-[#f0eee6] text-[#9a988e]">
+              {String(t.status).toUpperCase()}
+            </span>
+          )}
+          <span
+            className="text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full"
+            style={{ background: s.bg, color: s.fg }}
+          >
+            {s.label}
+          </span>
+        </div>
       </div>
 
       {/* Progress vector: fill = where you are; tick = where the required pace says you should be now */}
@@ -94,12 +108,59 @@ export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history
         <TargetSparkline points={history} />
       </div>
 
-      <form action={deleteTargetAction} className="mt-3">
-        <input type="hidden" name="id" value={t.id} />
-        <button type="submit" className="text-[11px] text-[#9a988e] hover:text-[#a33b2b] transition-colors">
-          Delete
-        </button>
-      </form>
+      {t.metric === "manual" && (
+        <form action={updateManualCurrentAction} className="mt-3 flex items-center gap-2">
+          <input type="hidden" name="id" value={t.id} />
+          <span className="text-[11px] text-[#6b6a64]">Log current value:</span>
+          <input name="manualCurrent" type="number" step="any" defaultValue={t.current} className="w-24 rounded border border-[#e0ddd2] bg-white px-2 py-1 text-[12px]" />
+          <button type="submit" className="text-[11px] text-[#d97757] hover:underline">Save</button>
+        </form>
+      )}
+
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[11px] text-[#6b6a64] hover:text-[#141413] select-none">Edit details</summary>
+        <form action={updateTargetAction} className="mt-2 grid grid-cols-2 gap-2 rounded-[8px] bg-[#faf9f5] border border-[#f0eee6] p-3">
+          <input type="hidden" name="id" value={t.id} />
+          <label className="col-span-2 text-[10px] text-[#6b6a64]">Objective
+            <input name="title" defaultValue={t.title} className={editCls} />
+          </label>
+          <label className="text-[10px] text-[#6b6a64]">Baseline
+            <input name="baselineValue" type="number" step="any" defaultValue={t.baselineValue} className={editCls} />
+          </label>
+          <label className="text-[10px] text-[#6b6a64]">Goal
+            <input name="goalValue" type="number" step="any" defaultValue={t.goalValue} className={editCls} />
+          </label>
+          <label className="col-span-2 text-[10px] text-[#6b6a64]">Deadline
+            <input name="deadlineAt" type="date" defaultValue={toDateInput(t.deadlineAt)} className={editCls} />
+          </label>
+          <button type="submit" className="col-span-2 mt-1 rounded-md bg-[#d97757] text-white px-3 py-1.5 text-[12px] font-medium hover:bg-[#c86846]">
+            Save changes
+          </button>
+        </form>
+      </details>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+        {t.status === "paused" ? (
+          <StatusButton id={t.id} status="active" label="Resume" />
+        ) : (
+          <StatusButton id={t.id} status="paused" label="Pause" />
+        )}
+        {t.status !== "archived" && <StatusButton id={t.id} status="archived" label="Archive" />}
+        <form action={deleteTargetAction} className="inline">
+          <input type="hidden" name="id" value={t.id} />
+          <button type="submit" className="text-[#9a988e] hover:text-[#a33b2b] transition-colors">Delete</button>
+        </form>
+      </div>
     </div>
+  );
+}
+
+function StatusButton({ id, status, label }: { id: number; status: string; label: string }) {
+  return (
+    <form action={setTargetStatusAction} className="inline">
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="status" value={status} />
+      <button type="submit" className="text-[#6b6a64] hover:text-[#141413] transition-colors">{label}</button>
+    </form>
   );
 }

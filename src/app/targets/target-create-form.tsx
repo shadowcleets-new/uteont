@@ -34,6 +34,12 @@ export function TargetCreateForm({ siteId }: { siteId: number }) {
             ))}
           </select>
         </Field>
+        <Field label="Direction">
+          <select name="direction" defaultValue="increase" className={inputCls}>
+            <option value="increase">Increase — higher is better</option>
+            <option value="decrease">Decrease — lower is better</option>
+          </select>
+        </Field>
         <Field label="Deadline">
           <input name="deadlineAt" type="date" required className={inputCls} />
         </Field>
