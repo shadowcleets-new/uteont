@@ -125,9 +125,9 @@ export const AGENTS: AgentSpec[] = [
     name: "Revenue Optimization Agent",
     sidebarLabel: "12. Revenue Optimization",
     description:
-      "Suggests CTA / affiliate / internal-link tweaks based on performance data. Routed through Major Changes gate.",
+      "Conversion audit of the live page: clear CTAs, a path to a money page (pricing/contact/checkout), lead capture, and trust signals. Reads only public HTML — no credentials needed. Scores the revenue_score metric.",
     runtime: "fn",
-    implemented: false,
+    implemented: true,
   },
 ];
 

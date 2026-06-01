@@ -16,6 +16,8 @@ import { SiteCrawlReport } from "./site-crawl-report";
 import type { SiteCrawlResult } from "@/lib/agent-runners/site-crawl";
 import { PerformanceReport } from "./performance-report";
 import type { PerformanceResult } from "@/lib/agent-runners/performance-tracking";
+import { RevenueReport } from "./revenue-report";
+import type { RevenueResult } from "@/lib/agent-runners/revenue";
 import { LiveStatus } from "@/components/live-status";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +49,8 @@ export default async function AgentPage({ params }: PageProps) {
     key === "content-audit" ? (latestAuditResult as unknown as ContentAuditResult | undefined) : undefined;
   const latestSiteCrawl =
     key === "site-crawl" ? (latestAuditResult as unknown as SiteCrawlResult | undefined) : undefined;
+  const latestRevenue =
+    key === "revenue" ? (latestAuditResult as unknown as RevenueResult | undefined) : undefined;
   const latestPerf =
     key === "performance-tracking"
       ? (recentRuns.find((r) => r.result && typeof (r.result as { configured?: unknown }).configured === "boolean")
@@ -97,6 +101,7 @@ export default async function AgentPage({ params }: PageProps) {
       {latestContentAudit && <ContentAuditReport result={latestContentAudit} />}
       {latestSiteCrawl && <SiteCrawlReport result={latestSiteCrawl} />}
       {latestPerf && <PerformanceReport result={latestPerf} />}
+      {latestRevenue && <RevenueReport result={latestRevenue} />}
 
       {/* STATS */}
       <section className="mb-6">

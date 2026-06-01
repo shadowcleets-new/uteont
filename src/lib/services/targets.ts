@@ -33,6 +33,7 @@ export const TARGET_METRICS = [
   { key: "technical_seo_score", label: "Technical SEO score (run the agent)", direction: "increase" },
   { key: "content_score", label: "Content audit score (run the agent)", direction: "increase" },
   { key: "site_structure_score", label: "Site structure score (run the agent)", direction: "increase" },
+  { key: "revenue_score", label: "Revenue/conversion score (run the agent)", direction: "increase" },
   { key: "gsc_clicks", label: "Search Console clicks (28d)", direction: "increase" },
   { key: "gsc_impressions", label: "Search Console impressions (28d)", direction: "increase" },
   { key: "manual", label: "Manual (I enter the value)", direction: "increase" },
@@ -135,6 +136,8 @@ export async function computeCurrentValue(target: Target): Promise<number> {
       return latestSuccessfulRunNumber(target.siteId, "agent.content-audit");
     case "site_structure_score":
       return latestSuccessfulRunNumber(target.siteId, "agent.site-crawl");
+    case "revenue_score":
+      return latestSuccessfulRunNumber(target.siteId, "agent.revenue");
     case "gsc_clicks":
       return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "clicks");
     case "gsc_impressions":

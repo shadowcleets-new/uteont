@@ -11,6 +11,7 @@ import { runTechnicalSeo } from "./technical-seo";
 import { runContentAudit } from "./content-audit";
 import { runSiteCrawl } from "./site-crawl";
 import { runPerformanceTracking } from "./performance-tracking";
+import { runRevenue } from "./revenue";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -63,6 +64,13 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     const siteId = Number(site.id ?? payload.siteId ?? 0);
     if (!Number.isFinite(siteId) || siteId <= 0) throw new Error("performance-tracking requires a site");
     const result = await runPerformanceTracking(siteId, String(site.domain ?? ""));
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  revenue: async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const url = String(payload.url ?? site.domain ?? "").trim();
+    if (!url) throw new Error("revenue requires a site domain or 'url' in payload");
+    const result = await runRevenue(url);
     return { result: result as unknown as Record<string, unknown> };
   },
 };

@@ -40,6 +40,7 @@ const METRIC_ROUTE: Record<string, { agentKey: string | null; label: string; ver
   technical_seo_score: { agentKey: "technical-seo", label: "Technical SEO", verb: "run a Technical SEO audit to raise the score" },
   content_score: { agentKey: "content-audit", label: "Content Audit", verb: "run a Content Audit to raise the on-page score" },
   site_structure_score: { agentKey: "site-crawl", label: "Site Crawl", verb: "run a Site Crawl to fix orphan and thin-linking pages" },
+  revenue_score: { agentKey: "revenue", label: "Revenue Optimization", verb: "run a conversion audit and add clear CTAs / money-page links" },
   gsc_clicks: { agentKey: "performance-tracking", label: "Performance Tracking", verb: "pull fresh Search Console data and grow clicks with new content" },
   gsc_impressions: { agentKey: "performance-tracking", label: "Performance Tracking", verb: "pull fresh Search Console data and expand keyword coverage" },
   articles_published: { agentKey: "content-writing", label: "Content Writing", verb: "draft more content to grow the publishing pipeline" },
