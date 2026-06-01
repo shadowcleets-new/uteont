@@ -4,6 +4,7 @@ import { useActiveSite } from "@/lib/hooks/use-active-site";
 
 export function SiteSelector() {
   const { activeSiteId, setActiveSiteId, sites, loading } = useActiveSite();
+  const activeKey = sites.find((s) => s.id === activeSiteId)?.key;
   if (loading) return <div className="text-xs opacity-60 px-3 py-2">Loading sites…</div>;
   if (sites.length === 0) {
     return (
@@ -26,7 +27,19 @@ export function SiteSelector() {
           <option key={s.id} value={s.id}>{s.name} ({s.key})</option>
         ))}
       </select>
-      <Link href="/sites/new" className="block text-[10px] mt-1 underline opacity-80">+ Add site</Link>
+      {activeKey && (
+        <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px]">
+          <Link href={`/sites/${activeKey}`} className="underline opacity-80 hover:opacity-100">Overview</Link>
+          <Link href={`/sites/${activeKey}/edit`} className="underline opacity-80 hover:opacity-100">Edit</Link>
+          <Link href={`/sites/${activeKey}/integrations`} className="underline opacity-80 hover:opacity-100 font-medium text-[#d97757]">
+            Integrations
+          </Link>
+        </div>
+      )}
+      <div className="mt-1 flex gap-2.5 text-[10px]">
+        <Link href="/sites" className="underline opacity-80 hover:opacity-100">All sites</Link>
+        <Link href="/sites/new" className="underline opacity-80 hover:opacity-100">+ Add site</Link>
+      </div>
     </div>
   );
 }
