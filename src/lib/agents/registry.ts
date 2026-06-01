@@ -138,6 +138,15 @@ export const AGENTS: AgentSpec[] = [
     runtime: "fn",
     implemented: true,
   },
+  {
+    key: "content-draft",
+    name: "Content Draft Agent",
+    sidebarLabel: "14. Content Draft",
+    description:
+      "Generates a full SEO draft inline via Gemini — title, meta title/description, outline, and markdown body — optionally fed by a Content Brief's missing terms/topics and the site's voice. Runs on Vercel (no worker); needs GEMINI_API_KEY.",
+    runtime: "fn",
+    implemented: true,
+  },
 ];
 
 export function findAgent(key: string): AgentSpec | undefined {

@@ -13,6 +13,7 @@ import { runSiteCrawl } from "./site-crawl";
 import { runPerformanceTracking } from "./performance-tracking";
 import { runRevenue } from "./revenue";
 import { runContentBrief } from "./content-brief";
+import { runContentDraft } from "./content-draft";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -80,6 +81,22 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     if (!url) throw new Error("content-brief requires a site domain or 'url' in payload");
     const competitors = Array.isArray(payload.competitors) ? payload.competitors.map(String) : [];
     const result = await runContentBrief(url, competitors);
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  "content-draft": async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const topic =
+      String(payload.topic ?? site.niche ?? site.name ?? "").trim() ||
+      `${site.name ?? "the site"} — a getting-started guide`;
+    const result = await runContentDraft({
+      topic,
+      keyword: payload.keyword ? String(payload.keyword) : undefined,
+      missingTerms: Array.isArray(payload.missingTerms) ? payload.missingTerms.map(String) : undefined,
+      missingTopics: Array.isArray(payload.missingTopics) ? payload.missingTopics.map(String) : undefined,
+      recommendedWordCount: typeof payload.recommendedWordCount === "number" ? payload.recommendedWordCount : undefined,
+      voice: site.voiceGuide ? String(site.voiceGuide) : undefined,
+      bannedPhrases: Array.isArray(site.bannedPhrases) ? site.bannedPhrases.map(String) : undefined,
+    });
     return { result: result as unknown as Record<string, unknown> };
   },
 };
