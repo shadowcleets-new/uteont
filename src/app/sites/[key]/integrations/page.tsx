@@ -29,7 +29,7 @@ export default async function IntegrationsPage({
       {error && (
         <div className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
       )}
-      <IntegrationsClient siteId={site.id} initial={integrations} />
+      <IntegrationsClient siteId={site.id} initial={integrations} ga4PropertyId={site.ga4PropertyId ?? null} />
     </main>
   );
 }
