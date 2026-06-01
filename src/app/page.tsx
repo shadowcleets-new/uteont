@@ -4,7 +4,7 @@ import { LiveStatus } from "@/components/live-status";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import { listTargetsWithProgress } from "@/lib/services/targets";
-import { captureSnapshots } from "@/lib/services/target-snapshots";
+import { captureSnapshots, snapshotsByTarget } from "@/lib/services/target-snapshots";
 import { pickNextAction } from "@/lib/services/next-action";
 import { TargetMini } from "@/components/target-mini";
 import { NextActionCard } from "@/components/next-action-card";
@@ -61,6 +61,10 @@ export default async function DashboardPage() {
   if (allTargets.length > 0) {
     await captureSnapshots(allTargets.map((t) => ({ id: t.id, value: t.current })));
   }
+  const targetHistory =
+    activeTargets.length > 0
+      ? await snapshotsByTarget(activeTargets.map((t) => t.id)).catch(() => new Map())
+      : new Map();
 
   // Look up site names without N+1 queries
   const db = getDb();
@@ -118,7 +122,7 @@ export default async function DashboardPage() {
           </div>
           <div className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden">
             {activeTargets.map((t) => (
-              <TargetMini key={t.id} t={t} />
+              <TargetMini key={t.id} t={t} history={targetHistory.get(t.id) ?? []} />
             ))}
           </div>
         </section>

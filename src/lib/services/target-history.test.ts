@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeTrend, sparkPath } from "./target-history";
+import { summarizeTrend, sparkPath, projectionConfidence } from "./target-history";
 
 const DAY = 86_400_000;
 const base = 1_700_000_000_000;
@@ -60,5 +60,27 @@ describe("sparkPath", () => {
   it("emits one point per value", () => {
     const d = sparkPath([1, 2, 3, 4], 90, 30);
     expect(d.split("L").length).toBe(4); // M + 3 L segments
+  });
+});
+
+describe("projectionConfidence", () => {
+  it("is low with fewer than three observations", () => {
+    expect(projectionConfidence([]).level).toBe("low");
+    expect(projectionConfidence([at(0, 10), at(1, 20)]).level).toBe("low");
+  });
+
+  it("is high for many steady observations", () => {
+    const steady = [at(0, 10), at(1, 20), at(2, 30), at(3, 40), at(4, 50), at(5, 60)];
+    const c = projectionConfidence(steady);
+    expect(c.level).toBe("high");
+    expect(c.samples).toBe(6);
+    expect(c.paceStdDev).toBeCloseTo(0, 5); // perfectly steady pace
+  });
+
+  it("drops confidence when the pace is erratic", () => {
+    const erratic = [at(0, 10), at(1, 60), at(2, 12), at(3, 80), at(4, 15)];
+    const c = projectionConfidence(erratic);
+    expect(c.level).not.toBe("high");
+    expect(c.paceStdDev).toBeGreaterThan(0);
   });
 });

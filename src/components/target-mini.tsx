@@ -1,4 +1,6 @@
 import type { TargetWithProgress } from "@/lib/services/targets";
+import type { TrendPoint } from "@/lib/services/target-history";
+import { TargetSparkline } from "@/components/target-sparkline";
 
 const STATUS: Record<string, { bg: string; fg: string; label: string; bar: string }> = {
   hit:         { bg: "#e7efe0", fg: "#4a6b2f", label: "HIT",       bar: "#9bb87a" },
@@ -10,7 +12,7 @@ const STATUS: Record<string, { bg: string; fg: string; label: string; bar: strin
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 /** Compact one-line target row for dashboard summaries. */
-export function TargetMini({ t }: { t: TargetWithProgress }) {
+export function TargetMini({ t, history = [] }: { t: TargetWithProgress; history?: TrendPoint[] }) {
   const p = t.progress;
   const s = STATUS[p.status] ?? STATUS["off-track"];
   const fillPct = clamp(p.progressPct, 0, 100);
@@ -21,6 +23,9 @@ export function TargetMini({ t }: { t: TargetWithProgress }) {
         <div className="mt-1.5 h-1.5 rounded-full bg-[#f0eee6] overflow-hidden">
           <div className="h-full rounded-full" style={{ width: `${fillPct}%`, background: s.bar }} />
         </div>
+      </div>
+      <div className="shrink-0 hidden sm:block">
+        <TargetSparkline points={history} width={56} height={18} bare />
       </div>
       <div className="text-[12px] text-[#6b6a64] w-10 text-right shrink-0">{Math.round(p.progressPct)}%</div>
       <span

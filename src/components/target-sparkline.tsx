@@ -18,18 +18,33 @@ export function TargetSparkline({
   points,
   width = 132,
   height = 30,
+  bare = false,
 }: {
   points: TrendPoint[];
   width?: number;
   height?: number;
+  /** Render only the line (no delta text / plateau pill) — for tight rows. */
+  bare?: boolean;
 }) {
   const trend = summarizeTrend(points);
   if (!trend.enough) {
-    return <span className="text-[11px] text-[#9a988e] italic">collecting history…</span>;
+    return bare ? (
+      <span className="text-[11px] text-[#cfccc0]">—</span>
+    ) : (
+      <span className="text-[11px] text-[#9a988e] italic">collecting history…</span>
+    );
   }
   const values = [...points].sort((a, b) => ms(a.capturedAt) - ms(b.capturedAt)).map((p) => p.value);
   const d = sparkPath(values, width, height);
   const tr = TREND[trend.direction];
+
+  if (bare) {
+    return (
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden>
+        <path d={d} fill="none" stroke={tr.color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2">

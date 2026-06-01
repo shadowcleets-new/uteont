@@ -8,7 +8,7 @@
 
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { targetSnapshots, type TargetSnapshot } from "@/lib/db/schema";
+import { targets, targetSnapshots, type TargetSnapshot } from "@/lib/db/schema";
 
 /** Don't record more than one snapshot per target within this window. */
 export const SNAPSHOT_DEBOUNCE_MS = 6 * 60 * 60 * 1000; // 6h
@@ -94,4 +94,18 @@ export async function captureSnapshots(
     console.warn("captureSnapshots failed", e);
     return 0;
   }
+}
+
+/**
+ * Snapshot every active target across all sites — the scheduled-cron path, so
+ * the trajectory accrues a point per day even on days nobody opens the app.
+ * Reuses the debounced writer, so a same-day page-load capture isn't doubled.
+ */
+export async function snapshotAllActiveTargets(nowMs: number = Date.now()): Promise<number> {
+  const db = getDb();
+  const active = await db.select().from(targets).where(eq(targets.status, "active"));
+  if (active.length === 0) return 0;
+  const { computeCurrentValue } = await import("./targets");
+  const rows = await Promise.all(active.map(async (t) => ({ id: t.id, value: await computeCurrentValue(t) })));
+  return captureSnapshots(rows, nowMs);
 }
