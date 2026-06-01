@@ -448,6 +448,37 @@ export const targetSnapshots = pgTable(
   }),
 );
 
+/**
+ * checkpoints — the human-in-the-loop approval QUEUE (distinct from `approvals`,
+ * which is the decided-audit log). A checkpoint is a pending proposed action an
+ * agent wants a human to approve, carrying its blast radius (how many items it
+ * touches) so the UI can apply graduated friction. Decided checkpoints also
+ * write an `approvals` audit row.
+ */
+export const checkpoints = pgTable(
+  "checkpoints",
+  {
+    id:          serial("id").primaryKey(),
+    siteId:      integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    gate:        text("gate").notNull(),        // A | B | C | D | E
+    title:       text("title").notNull(),
+    summary:     text("summary"),
+    payload:     jsonb("payload").$type<Record<string, unknown>>(),
+    blastRadius: integer("blast_radius").notNull().default(0), // # items affected
+    status:      text("status").notNull().default("pending"),
+      // pending | approved | rejected | edited | deferred | escalated
+    decision:    text("decision"),              // the verb chosen
+    note:        text("note"),
+    decidedBy:   text("decided_by"),
+    createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt:   timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => ({
+    byStatus: index("checkpoints_status_idx").on(t.status),
+    bySite:   index("checkpoints_site_idx").on(t.siteId),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -467,3 +498,4 @@ export type Message = typeof messages.$inferSelect;
 export type ResultCache = typeof resultCache.$inferSelect;
 export type Target = typeof targets.$inferSelect;
 export type TargetSnapshot = typeof targetSnapshots.$inferSelect;
+export type Checkpoint = typeof checkpoints.$inferSelect;

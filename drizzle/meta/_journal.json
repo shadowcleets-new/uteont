@@ -57,6 +57,13 @@
       "when": 1780225561894,
       "tag": "0007_overrated_firebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780294590930,
+      "tag": "0008_cold_black_widow",
+      "breakpoints": true
     }
   ]
 }
