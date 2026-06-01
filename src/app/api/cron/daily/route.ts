@@ -5,6 +5,7 @@ import { sites, siteIntegrations } from "@/lib/db/schema";
 import { startRun, finishRun } from "@/lib/services/runs";
 import { runPerformanceTracking } from "@/lib/agent-runners/performance-tracking";
 import { snapshotAllActiveTargets } from "@/lib/services/target-snapshots";
+import { notifySlackForSite } from "@/lib/services/slack-notify";
 
 /**
  * Daily cron — the once-a-day heartbeat.
@@ -42,7 +43,13 @@ export async function GET() {
           result: result as unknown as Record<string, unknown>,
         }).catch(() => null);
       }
-      if (result.configured) perfPulled++;
+      if (result.configured) {
+        perfPulled++;
+        await notifySlackForSite(
+          siteId,
+          `UTEONT daily — Search Console (28d): ${result.clicks ?? 0} clicks, ${result.impressions ?? 0} impressions.`,
+        ).catch(() => {});
+      }
     }
   } catch (e) {
     console.warn("[cron.daily] performance pull failed:", e);

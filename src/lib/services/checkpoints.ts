@@ -11,6 +11,7 @@ import { getDb } from "@/lib/db/client";
 import { checkpoints, type Checkpoint } from "@/lib/db/schema";
 import { applyVerb, canDecide, toApprovalDecision, type CheckpointStatus, type Verb } from "./checkpoint-machine";
 import { recordApproval } from "./approvals";
+import { notifySlackForSite } from "./slack-notify";
 
 export class CheckpointError extends Error {
   constructor(message: string) {
@@ -108,6 +109,14 @@ export async function decideCheckpoint(
     } catch {
       /* audit is best-effort */
     }
+  }
+
+  // Notify Slack of the decision (best-effort; no-op without a slack integration).
+  if (cp.siteId) {
+    await notifySlackForSite(
+      cp.siteId,
+      `Checkpoint ${verb.toUpperCase()}: "${cp.title}"${opts.note ? ` — ${opts.note}` : ""}`,
+    ).catch(() => {});
   }
   return row;
 }
