@@ -12,6 +12,7 @@ import { runContentAudit } from "./content-audit";
 import { runSiteCrawl } from "./site-crawl";
 import { runPerformanceTracking } from "./performance-tracking";
 import { runRevenue } from "./revenue";
+import { runContentBrief } from "./content-brief";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -71,6 +72,14 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     const url = String(payload.url ?? site.domain ?? "").trim();
     if (!url) throw new Error("revenue requires a site domain or 'url' in payload");
     const result = await runRevenue(url);
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  "content-brief": async ({ payload }) => {
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    const url = String(payload.url ?? site.domain ?? "").trim();
+    if (!url) throw new Error("content-brief requires a site domain or 'url' in payload");
+    const competitors = Array.isArray(payload.competitors) ? payload.competitors.map(String) : [];
+    const result = await runContentBrief(url, competitors);
     return { result: result as unknown as Record<string, unknown> };
   },
 };

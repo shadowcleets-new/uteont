@@ -129,6 +129,15 @@ export const AGENTS: AgentSpec[] = [
     runtime: "fn",
     implemented: true,
   },
+  {
+    key: "content-brief",
+    name: "Content Brief Agent",
+    sidebarLabel: "13. Content Brief",
+    description:
+      "Reverse-engineers the topic: profiles your page (and competitor URLs when given) into heading outline / terms / entities, then computes the brief — recommended length, missing terms + topics, and an information-gain read. Public HTML only — no SERP API needed. Scores content_brief_score.",
+    runtime: "fn",
+    implemented: true,
+  },
 ];
 
 export function findAgent(key: string): AgentSpec | undefined {
