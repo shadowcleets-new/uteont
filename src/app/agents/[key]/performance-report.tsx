@@ -32,6 +32,14 @@ export function PerformanceReport({ result }: { result: PerformanceResult }) {
         <Metric label="CTR" value={typeof result.ctr === "number" ? `${(result.ctr * 100).toFixed(2)}%` : "—"} />
         <Metric label="AVG POSITION" value={typeof result.position === "number" ? result.position.toFixed(1) : "—"} />
       </div>
+      {typeof result.ga4Sessions === "number" && (
+        <div className="mt-3 rounded-[10px] border border-[#e8e6dc] bg-white p-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Metric label="GA4 SESSIONS" value={fmt(result.ga4Sessions)} />
+          <Metric label="GA4 USERS" value={fmt(result.ga4Users)} />
+          <Metric label="GA4 CONVERSIONS" value={fmt(result.ga4Conversions)} />
+          <Metric label="ENGAGEMENT" value={typeof result.ga4EngagementRate === "number" ? `${(result.ga4EngagementRate * 100).toFixed(1)}%` : "—"} />
+        </div>
+      )}
     </section>
   );
 }

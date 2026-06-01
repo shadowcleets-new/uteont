@@ -44,6 +44,8 @@ const METRIC_ROUTE: Record<string, { agentKey: string | null; label: string; ver
   content_brief_score: { agentKey: "content-brief", label: "Content Brief", verb: "run a content brief and fill the missing terms + topics" },
   gsc_clicks: { agentKey: "performance-tracking", label: "Performance Tracking", verb: "pull fresh Search Console data and grow clicks with new content" },
   gsc_impressions: { agentKey: "performance-tracking", label: "Performance Tracking", verb: "pull fresh Search Console data and expand keyword coverage" },
+  ga4_sessions: { agentKey: "performance-tracking", label: "Performance Tracking", verb: "pull fresh GA4 data and grow sessions with new content" },
+  ga4_conversions: { agentKey: "performance-tracking", label: "Performance Tracking", verb: "pull fresh GA4 data and lift conversions" },
   articles_published: { agentKey: "content-writing", label: "Content Writing", verb: "draft more content to grow the publishing pipeline" },
   articles_total: { agentKey: "content-writing", label: "Content Writing", verb: "draft a new article" },
   keywords_approved: { agentKey: "research", label: "Research", verb: "run research, then approve the strongest keywords" },

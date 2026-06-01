@@ -37,6 +37,8 @@ export const TARGET_METRICS = [
   { key: "content_brief_score", label: "Content coverage score (run the agent)", direction: "increase" },
   { key: "gsc_clicks", label: "Search Console clicks (28d)", direction: "increase" },
   { key: "gsc_impressions", label: "Search Console impressions (28d)", direction: "increase" },
+  { key: "ga4_sessions", label: "GA4 sessions (28d)", direction: "increase" },
+  { key: "ga4_conversions", label: "GA4 conversions (28d)", direction: "increase" },
   { key: "manual", label: "Manual (I enter the value)", direction: "increase" },
 ] as const;
 
@@ -145,6 +147,10 @@ export async function computeCurrentValue(target: Target): Promise<number> {
       return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "clicks");
     case "gsc_impressions":
       return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "impressions");
+    case "ga4_sessions":
+      return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "ga4Sessions");
+    case "ga4_conversions":
+      return latestSuccessfulRunNumber(target.siteId, "agent.performance-tracking", "ga4Conversions");
     case "manual":
     default:
       return target.manualCurrent ?? 0;
