@@ -19,7 +19,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # `npm ci` is strict about peer deps (React 19 / Next 16 betas trip it);
+      # a forgiving install is fine for a verify-only job.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Type check
         run: npx tsc --noEmit
       - name: Lint
