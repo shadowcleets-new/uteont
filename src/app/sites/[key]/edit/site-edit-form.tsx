@@ -73,8 +73,16 @@ export function SiteEditForm({ site }: { site: Site }) {
       )}
       {tab === "analytics" && (
         <>
-          <Text label="Google Search Console property ID" value={form.gscPropertyId} onChange={(v) => setForm({ ...form, gscPropertyId: v })} />
-          <Text label="GA4 property ID"                   value={form.ga4PropertyId} onChange={(v) => setForm({ ...form, ga4PropertyId: v })} />
+          <Text label="Google Search Console property (optional)" value={form.gscPropertyId} onChange={(v) => setForm({ ...form, gscPropertyId: v })} />
+          <p className="opacity-60 text-xs -mt-2">
+            Leave blank. Search Console has no &ldquo;property ID&rdquo; — it&rsquo;s matched by your site
+            domain automatically when you Connect Search Console. Only set this to override with an exact
+            property string (e.g. <code>sc-domain:example.com</code>).
+          </p>
+          <Text label="GA4 property ID" value={form.ga4PropertyId} onChange={(v) => setForm({ ...form, ga4PropertyId: v })} />
+          <p className="opacity-60 text-xs -mt-2">
+            Numeric GA4 property ID (e.g. <code>539767853</code>), from GA4 → Admin → Property Settings.
+          </p>
         </>
       )}
       <div className="pt-4 flex items-center gap-3">

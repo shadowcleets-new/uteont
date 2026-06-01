@@ -16,7 +16,9 @@ export const siteCreateSchema = z.object({
   contentPillars: z.array(z.string().min(1).max(80)).max(20).default([]),
   bannedPhrases: z.array(z.string().min(1).max(120)).max(100).default([]),
   defaultCategories: z.array(z.string().min(1).max(80)).max(50).default([]),
-  sitemapUrl: z.string().url().optional(),
+  // Optional URL: the edit form submits "" for blank fields, which would fail
+  // .url(); treat empty string as "not provided".
+  sitemapUrl: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   gscPropertyId: z.string().max(200).optional(),
   ga4PropertyId: z.string().max(200).optional(),
 });
