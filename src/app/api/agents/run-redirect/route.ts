@@ -36,7 +36,23 @@ export async function POST(req: NextRequest) {
       niche: site.niche, audience: site.audience, voiceGuide: site.voiceGuide,
       contentPillars: site.contentPillars, bannedPhrases: site.bannedPhrases,
     };
-    await runAgent({ agentKey, siteId, payload: { site: siteSnapshot } });
+
+    // Optional per-agent inputs (see lib/agents/run-inputs.ts). Threaded into the
+    // payload so the inline runners receive them.
+    const payload: Record<string, unknown> = { site: siteSnapshot };
+    const url = String(form.get("url") ?? "").trim();
+    const topic = String(form.get("topic") ?? "").trim();
+    const keyword = String(form.get("keyword") ?? "").trim();
+    const competitors = String(form.get("competitors") ?? "")
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (url) payload.url = url;
+    if (topic) payload.topic = topic;
+    if (keyword) payload.keyword = keyword;
+    if (competitors.length) payload.competitors = competitors;
+
+    await runAgent({ agentKey, siteId, payload });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const url = new URL(`/agents/${agentKey}?error=${encodeURIComponent(msg)}`, req.url);
