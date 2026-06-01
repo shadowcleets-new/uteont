@@ -64,6 +64,13 @@
       "when": 1780294590930,
       "tag": "0008_cold_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780295001573,
+      "tag": "0009_eager_power_man",
+      "breakpoints": true
     }
   ]
 }

@@ -479,6 +479,33 @@ export const checkpoints = pgTable(
   }),
 );
 
+/**
+ * decision_records — explainability provenance (the design's DecisionRecord).
+ * Each row captures WHY an agent/Director made a choice: the rationale, a
+ * confidence, the evidence considered, and the inputs — so "why this keyword?"
+ * has an auditable answer.
+ */
+export const decisionRecords = pgTable(
+  "decision_records",
+  {
+    id:         serial("id").primaryKey(),
+    siteId:     integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    subjectKey: text("subject_key").notNull(),  // "agent.<key>" | "director"
+    kind:       text("kind").notNull(),         // keyword | action | recommendation | plan
+    title:      text("title").notNull(),
+    rationale:  text("rationale"),
+    confidence: real("confidence"),             // 0..1
+    evidence:   jsonb("evidence").$type<Array<{ label: string; value?: string; source?: string }>>(),
+    inputs:     jsonb("inputs").$type<Record<string, unknown>>(),
+    runId:      integer("run_id"),
+    createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byKind: index("decision_records_kind_idx").on(t.kind),
+    bySite: index("decision_records_site_idx").on(t.siteId),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -499,3 +526,4 @@ export type ResultCache = typeof resultCache.$inferSelect;
 export type Target = typeof targets.$inferSelect;
 export type TargetSnapshot = typeof targetSnapshots.$inferSelect;
 export type Checkpoint = typeof checkpoints.$inferSelect;
+export type DecisionRecord = typeof decisionRecords.$inferSelect;

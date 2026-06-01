@@ -81,6 +81,25 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     if (!url) throw new Error("content-brief requires a site domain or 'url' in payload");
     const competitors = Array.isArray(payload.competitors) ? payload.competitors.map(String) : [];
     const result = await runContentBrief(url, competitors);
+    // Explainability: record WHY the brief recommends what it does (best-effort).
+    try {
+      const { recordDecision } = await import("@/lib/services/decision-records");
+      await recordDecision({
+        siteId: Number(site.id) || null,
+        subjectKey: "agent.content-brief",
+        kind: "recommendation",
+        title: `Content brief for ${url}`,
+        rationale:
+          result.mode === "competitive"
+            ? `Cover ${result.missingTerms.length} term(s) competitors rank for; target ${result.recommendedWordCount} words.`
+            : `Baseline coverage ${result.score}/100; target ${result.recommendedWordCount} words.`,
+        confidence: result.score / 100,
+        evidence: result.missingTerms.slice(0, 8).map((t) => ({ label: "missing term", value: t })),
+        inputs: { url, competitors },
+      });
+    } catch {
+      /* explainability is best-effort */
+    }
     return { result: result as unknown as Record<string, unknown> };
   },
   "content-draft": async ({ payload }) => {

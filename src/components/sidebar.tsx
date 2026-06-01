@@ -39,6 +39,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: "Keywords", href: "/keywords" },
       { label: "Runs", href: "/runs" },
+      { label: "Decisions", href: "/decisions" },
       { label: "Export", href: "/export" },
     ],
   },
