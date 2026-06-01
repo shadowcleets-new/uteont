@@ -66,6 +66,31 @@ export default async function DashboardPage() {
       ? await snapshotsByTarget(activeTargets.map((t) => t.id)).catch(() => new Map())
       : new Map();
 
+  // Active-site connection health (so connecting GSC/GA4/etc is discoverable here).
+  let connections: { key: string; gsc: boolean; ga4: boolean; slack: boolean; cms: boolean } | null = null;
+  if (activeSiteId) {
+    try {
+      const { listIntegrations } = await import("@/lib/services/integrations");
+      const [siteRow] = await getDb()
+        .select({ key: sites.key, ga4: sites.ga4PropertyId })
+        .from(sites)
+        .where(eq(sites.id, activeSiteId))
+        .limit(1);
+      const kinds = new Set((await listIntegrations(activeSiteId)).map((i) => i.kind));
+      if (siteRow) {
+        connections = {
+          key: siteRow.key,
+          gsc: kinds.has("gsc"),
+          ga4: Boolean(siteRow.ga4),
+          slack: kinds.has("slack"),
+          cms: ["wordpress", "shopify", "webflow", "ghost", "vercel"].some((k) => kinds.has(k)),
+        };
+      }
+    } catch (e) {
+      console.warn("connections load failed", e);
+    }
+  }
+
   // Look up site names without N+1 queries
   const db = getDb();
   const siteIds = [...new Set(recent.map((r) => r.siteId))];
@@ -111,6 +136,23 @@ export default async function DashboardPage() {
           tone={sysStatus.dbReachable ? "ok" : "err"}
         />
       </section>
+
+      {connections && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-bold tracking-wider text-[#9a988e]">CONNECTIONS</div>
+            <Link href={`/sites/${connections.key}/integrations`} className="text-[11px] text-[#d97757] hover:underline">
+              Manage →
+            </Link>
+          </div>
+          <div className="rounded-[10px] border border-[#e8e6dc] bg-white px-5 py-4 flex flex-wrap gap-2">
+            <ConnChip label="Search Console" on={connections.gsc} href={`/sites/${connections.key}/integrations`} />
+            <ConnChip label="GA4" on={connections.ga4} href={`/sites/${connections.key}/edit`} />
+            <ConnChip label="Slack" on={connections.slack} href={`/sites/${connections.key}/integrations`} />
+            <ConnChip label="CMS publish" on={connections.cms} href={`/sites/${connections.key}/integrations`} />
+          </div>
+        </section>
+      )}
 
       {activeTargets.length > 0 && (
         <section className="mb-8">
@@ -202,6 +244,22 @@ function Stat({ label, value, tone = "neutral" }: StatProps) {
         {value}
       </div>
     </div>
+  );
+}
+
+function ConnChip({ label, on, href }: { label: string; on: boolean; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-full border transition-colors hover:opacity-80"
+      style={
+        on
+          ? { background: "#e7efe0", color: "#4a6b2f", borderColor: "#d3e3c8" }
+          : { background: "#faf9f5", color: "#9a988e", borderColor: "#e8e6dc" }
+      }
+    >
+      <span className="font-bold">{on ? "✓" : "○"}</span> {label}
+    </Link>
   );
 }
 
