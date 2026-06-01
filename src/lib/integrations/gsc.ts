@@ -150,14 +150,54 @@ export async function querySearchAnalytics(
   }
 }
 
-/** End-to-end: refresh token → query → summary. null on any failure. */
+/**
+ * GSC is picky: the siteUrl must match the property EXACTLY as registered —
+ * URL-prefix (`https://x.com/`, with trailing slash) vs domain (`sc-domain:x.com`).
+ * The stored domain may not match either, so we try the sensible variants and
+ * use whichever the account actually owns. Pure + ordered (most-likely first).
+ */
+export function candidatePropertyUrls(propertyUrl: string): string[] {
+  const raw = propertyUrl.trim();
+  if (!raw) return [];
+  const out: string[] = [];
+  const push = (v: string) => {
+    if (v && !out.includes(v)) out.push(v);
+  };
+
+  if (raw.startsWith("sc-domain:")) {
+    push(raw);
+    return out;
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    const noSlash = raw.replace(/\/+$/, "");
+    push(noSlash + "/"); // URL-prefix properties carry a trailing slash
+    push(noSlash);
+    push(raw);
+    try {
+      push(`sc-domain:${new URL(raw).host.toLowerCase()}`);
+    } catch {
+      /* ignore */
+    }
+    return out;
+  }
+  // bare domain like "prolve.com"
+  push(`https://${raw}/`);
+  push(`https://${raw}`);
+  push(`sc-domain:${raw.toLowerCase()}`);
+  return out;
+}
+
+/** End-to-end: refresh token → try each property variant → summary. null on any failure. */
 export async function fetchGscSummary(
   cfg: GscConfig,
   range: DateRange = gscDateRange(Date.now()),
 ): Promise<GscSummary | null> {
   const accessToken = await refreshAccessToken(cfg.refreshToken);
   if (!accessToken) return null;
-  const json = await querySearchAnalytics(cfg.propertyUrl, accessToken, buildSearchAnalyticsBody(range));
-  if (json == null) return null;
-  return summarizeSearchAnalytics(json);
+  const body = buildSearchAnalyticsBody(range);
+  for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
+    const json = await querySearchAnalytics(property, accessToken, body);
+    if (json != null) return summarizeSearchAnalytics(json);
+  }
+  return null;
 }

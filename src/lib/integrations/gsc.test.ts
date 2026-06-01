@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
-  gscDateRange, buildSearchAnalyticsBody, summarizeSearchAnalytics, buildConsentUrl,
+  gscDateRange, buildSearchAnalyticsBody, summarizeSearchAnalytics, buildConsentUrl, candidatePropertyUrls,
 } from "./gsc";
 
 const DAY = 86_400_000;
@@ -37,6 +37,29 @@ describe("summarizeSearchAnalytics", () => {
   it("returns zeros when there are no rows", () => {
     expect(summarizeSearchAnalytics({})).toEqual({ clicks: 0, impressions: 0, ctr: 0, position: 0 });
     expect(summarizeSearchAnalytics({ rows: [] })).toEqual({ clicks: 0, impressions: 0, ctr: 0, position: 0 });
+  });
+});
+
+describe("candidatePropertyUrls", () => {
+  it("offers URL-prefix (trailing-slash first) + domain variants for an https URL", () => {
+    const c = candidatePropertyUrls("https://prolve.com");
+    expect(c[0]).toBe("https://prolve.com/"); // GSC URL-prefix props carry a trailing slash
+    expect(c).toContain("https://prolve.com");
+    expect(c).toContain("sc-domain:prolve.com");
+  });
+
+  it("expands a bare domain", () => {
+    const c = candidatePropertyUrls("prolve.com");
+    expect(c).toContain("https://prolve.com/");
+    expect(c).toContain("sc-domain:prolve.com");
+  });
+
+  it("passes an sc-domain through unchanged", () => {
+    expect(candidatePropertyUrls("sc-domain:prolve.com")).toEqual(["sc-domain:prolve.com"]);
+  });
+
+  it("returns nothing for an empty property", () => {
+    expect(candidatePropertyUrls("")).toEqual([]);
   });
 });
 
