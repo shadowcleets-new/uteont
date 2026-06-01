@@ -8,6 +8,7 @@ import { listRuns } from "@/lib/services/runs";
 import type { Run } from "@/lib/db/schema";
 import type { PillState } from "@/lib/theme";
 import { RunAgentButton } from "./run-agent-button";
+import { AgentStream } from "./agent-stream";
 import { TechnicalSeoReport } from "./technical-seo-report";
 import type { TechnicalSeoResult } from "@/lib/agent-runners/technical-seo";
 import { ContentAuditReport } from "./content-audit-report";
@@ -107,6 +108,8 @@ export default async function AgentPage({ params }: PageProps) {
           )}
         </div>
       </div>
+
+      {agent.implemented && <AgentStream agentKey={agent.key} />}
 
       {latestTechAudit && <TechnicalSeoReport result={latestTechAudit} />}
       {latestContentAudit && <ContentAuditReport result={latestContentAudit} />}
