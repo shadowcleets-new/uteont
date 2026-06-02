@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { keywords } from "@/lib/db/schema";
+import { keywords, ideas, articles } from "@/lib/db/schema";
 import { answerCallbackQuery, sendMessage } from "@/lib/services/telegram";
 import { recordApproval } from "@/lib/services/approvals";
 import { listSites, getSiteByKey } from "@/lib/services/sites";
@@ -360,7 +360,9 @@ async function handleCallback(data: string): Promise<string> {
       }).catch(() => null);
       return `Keyword ${id} → ${verb === "approve" ? "approved" : "shelved"}`;
     }
-    // ideas / articles — record approval, downstream service decides what to do
+    // ideas / articles — flip the row status AND record the approval audit, so
+    // the decision actually advances the pipeline (not just an audit row).
+    await applyEntityDecision(entity, id, verb === "approve").catch(() => null);
     await recordApproval({
       gate: entity === "idea" ? "A" : entity === "article" ? "B" : "C",
       targetType: entity === "idea" || entity === "article" ? entity : "change",
@@ -368,7 +370,7 @@ async function handleCallback(data: string): Promise<string> {
       decision: verb === "approve" ? "approve" : "reject",
       channel: "telegram",
     });
-    return `${entity} ${id} → ${verb}`;
+    return `${entity} ${id} → ${verb === "approve" ? "approved" : "rejected"}`;
   }
 
   return `Unhandled callback: ${data}`;
@@ -417,4 +419,20 @@ async function applyKeywordDecision(id: number, status: "approved" | "shelved") 
       approvedAt: status === "approved" ? new Date() : null,
     })
     .where(eq(keywords.id, id));
+}
+
+/**
+ * Flip an idea/article row's status on an approval decision. Uses "approved"
+ * (not "published") deliberately: there is no automated CMS publish path, so
+ * claiming "published" would be dishonest — the articles_published metric only
+ * moves on a real deploy.
+ */
+async function applyEntityDecision(entity: string, id: number, approve: boolean): Promise<void> {
+  const db = getDb();
+  const status = approve ? "approved" : "rejected";
+  if (entity === "idea") {
+    await db.update(ideas).set({ status }).where(eq(ideas.id, id));
+  } else if (entity === "article") {
+    await db.update(articles).set({ status }).where(eq(articles.id, id));
+  }
 }

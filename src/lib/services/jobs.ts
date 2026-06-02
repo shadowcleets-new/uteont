@@ -133,6 +133,35 @@ export interface ApplyJobResultInput {
   suppressDirectorMessage?: boolean; // replay-from-Director sets true (Director re-posts)
 }
 
+// Gated agent outputs that should land in the human approval inbox (/approvals).
+// gate codes match the checkpoint state machine (A=idea selection, B=draft
+// review, C=outreach send).
+const CHECKPOINT_GATES: Record<string, { gate: string; blastRadius: number }> = {
+  "idea-generation": { gate: "A", blastRadius: 0 },
+  "content-writing": { gate: "B", blastRadius: 1 },
+  backlink: { gate: "C", blastRadius: 1 },
+};
+
+function checkpointTitle(agentKey: string, payload: Record<string, unknown>, result: Record<string, unknown>): string {
+  if (agentKey === "content-writing") {
+    const title = String((result.title as string) ?? (payload.title as string) ?? "draft article");
+    return `Review draft: ${title.slice(0, 80)}`;
+  }
+  if (agentKey === "idea-generation") {
+    const n = Array.isArray(result.ideas) ? (result.ideas as unknown[]).length : undefined;
+    return n ? `Review ${n} generated idea${n === 1 ? "" : "s"}` : "Review generated content ideas";
+  }
+  if (agentKey === "backlink") return "Approve outreach email";
+  return `Review ${agentKey} output`;
+}
+
+function checkpointSummary(agentKey: string): string {
+  if (agentKey === "content-writing") return "A draft article is ready for review before publishing.";
+  if (agentKey === "idea-generation") return "Generated ideas are waiting for selection.";
+  if (agentKey === "backlink") return "An outreach email draft is ready — review before sending.";
+  return "Output awaiting review.";
+}
+
 export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runId: number }> {
   const db = getDb();
 
@@ -166,6 +195,28 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
     // outreach/backlink: result captured in runs.result; no typed table v1.
   } catch (e) {
     console.warn(`applyJobResult: agent-persist failed for ${input.agentKey}`, e);
+  }
+
+  // 2.5 Enqueue an approval checkpoint for gated outputs so finished work that
+  //     needs sign-off reaches the /approvals inbox. Real jobs only — a cached
+  //     replay (jobId null) would re-enqueue an already-decided item.
+  if (input.jobId != null) {
+    const gateCfg = CHECKPOINT_GATES[input.agentKey];
+    if (gateCfg) {
+      try {
+        const { createCheckpoint } = await import("./checkpoints");
+        await createCheckpoint({
+          siteId: input.siteId,
+          gate: gateCfg.gate,
+          title: checkpointTitle(input.agentKey, input.payload, input.result),
+          summary: checkpointSummary(input.agentKey),
+          payload: { agentKey: input.agentKey, jobId: input.jobId, runId: run.id, result: input.result },
+          blastRadius: gateCfg.blastRadius,
+        });
+      } catch (e) {
+        console.warn("applyJobResult: createCheckpoint failed", e);
+      }
+    }
   }
 
   // 3. Telegram notification (best-effort, never throws into caller)
