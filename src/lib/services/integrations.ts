@@ -1,6 +1,6 @@
 import { getDb } from "@/lib/db/client";
 import { siteIntegrations, type SiteIntegration } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { encrypt, decrypt } from "@/lib/crypto/integration-secrets";
 import type {
   IntegrationCreateInput, IntegrationUpdateInput,
@@ -87,4 +87,23 @@ export async function updateIntegration(
 export async function deleteIntegration(id: number): Promise<void> {
   const db = getDb();
   await db.delete(siteIntegrations).where(eq(siteIntegrations.id, id));
+}
+
+/**
+ * Stamp a site's integration of a given kind as just-verified: writes
+ * `lastVerifiedAt = now` and flips `status` to "connected". Called after a
+ * successful live "Test connection" (or a fresh OAuth connect) so the
+ * integrations table shows a real, trustworthy "last verified" time instead of
+ * the previously-never-written column. Returns the new timestamp, or null if no
+ * such row exists (e.g. GA4, which is stored on the site, not as a row).
+ */
+export async function markIntegrationVerified(siteId: number, kind: string): Promise<Date | null> {
+  const db = getDb();
+  const now = new Date();
+  const rows = await db
+    .update(siteIntegrations)
+    .set({ lastVerifiedAt: now, status: "connected", updatedAt: now })
+    .where(and(eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.kind, kind)))
+    .returning({ id: siteIntegrations.id });
+  return rows.length > 0 ? now : null;
 }

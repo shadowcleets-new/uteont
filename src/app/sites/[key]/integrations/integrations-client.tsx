@@ -1,5 +1,6 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { relativeTime } from "@/lib/format/relative-time";
 
 interface ItemShape {
   id: number;
@@ -9,8 +10,38 @@ interface ItemShape {
   lastVerifiedAt: string | null | Date;
 }
 
-// gsc / ga4 / slack get dedicated cards; the rest use the generic JSON form.
+// gsc / ga4 / slack get dedicated cards; the rest use the structured CMS form.
 const CMS_KINDS = ["wordpress", "shopify", "webflow", "ghost", "vercel"] as const;
+type CmsKind = (typeof CMS_KINDS)[number];
+
+type CmsField = { name: string; label: string; type?: "text" | "url" | "password"; placeholder?: string; optional?: boolean };
+
+// Per-kind structured fields — replaces the old "paste raw JSON" box so each
+// publishing target asks for exactly the credentials its client needs.
+const CMS_FIELDS: Record<CmsKind, CmsField[]> = {
+  wordpress: [
+    { name: "baseUrl", label: "Site URL", type: "url", placeholder: "https://blog.example.com" },
+    { name: "username", label: "Username", placeholder: "editor" },
+    { name: "applicationPassword", label: "Application password", type: "password", placeholder: "xxxx xxxx xxxx xxxx" },
+  ],
+  shopify: [
+    { name: "storeDomain", label: "Store domain", placeholder: "my-store.myshopify.com" },
+    { name: "accessToken", label: "Admin API access token", type: "password", placeholder: "shpat_…" },
+  ],
+  webflow: [
+    { name: "siteId", label: "Webflow site ID", placeholder: "5f…e3" },
+    { name: "apiToken", label: "API token", type: "password" },
+  ],
+  ghost: [
+    { name: "adminApiUrl", label: "Admin API URL", type: "url", placeholder: "https://example.ghost.io" },
+    { name: "adminApiKey", label: "Admin API key", type: "password", placeholder: "id:secret" },
+  ],
+  vercel: [
+    { name: "projectId", label: "Project ID", placeholder: "prj_…" },
+    { name: "token", label: "Vercel token", type: "password" },
+    { name: "teamId", label: "Team ID", placeholder: "team_… (optional)", optional: true },
+  ],
+};
 
 const slackValid = (u: string) => /^https:\/\/hooks\.slack\.com\/services\//.test(u.trim());
 
@@ -26,22 +57,42 @@ export function IntegrationsClient({
   const [items, setItems] = useState<ItemShape[]>(initial);
   const [pending, start] = useTransition();
 
+  // Captured once after mount so relative times don't cause SSR hydration drift.
+  // Set from a timer callback (not synchronously in the effect body) to satisfy
+  // react-hooks/set-state-in-effect while staying client-only.
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const id = setTimeout(() => setNow(Date.now()), 0);
+    return () => clearTimeout(id);
+  }, []);
+
   const gscRow = items.find((i) => i.kind === "gsc");
   const slackRow = items.find((i) => i.kind === "slack");
 
-  // Generic (CMS) add form
-  const [kind, setKind] = useState<(typeof CMS_KINDS)[number]>("wordpress");
+  // Structured CMS add form
+  const [kind, setKind] = useState<CmsKind>("wordpress");
+  const [cmsValues, setCmsValues] = useState<Record<string, string>>({});
+  const [rawMode, setRawMode] = useState(false);
+  const [rawText, setRawText] = useState('{\n  "baseUrl": ""\n}');
   const [label, setLabel] = useState("");
-  const [configText, setConfigText] = useState('{\n  "baseUrl": "",\n  "username": "",\n  "applicationPassword": ""\n}');
   const [err, setErr] = useState<string | null>(null);
 
   // GA4 card
   const [ga4, setGa4] = useState(ga4PropertyId ?? "");
   const [ga4Msg, setGa4Msg] = useState<string | null>(null);
 
+  // GSC card
+  const [gscMsg, setGscMsg] = useState<string | null>(null);
+
   // Slack card
   const [slackUrl, setSlackUrl] = useState("");
   const [slackMsg, setSlackMsg] = useState<string | null>(null);
+
+  const setKindReset = (k: CmsKind) => {
+    setKind(k);
+    setCmsValues({});
+    setErr(null);
+  };
 
   const remove = (id: number, confirmMsg = "Delete this integration?") => {
     if (!confirm(confirmMsg)) return;
@@ -53,12 +104,26 @@ export function IntegrationsClient({
 
   const submitCms = () => {
     setErr(null);
-    let config: object;
-    try {
-      config = JSON.parse(configText);
-    } catch {
-      setErr("Config must be valid JSON.");
-      return;
+    let config: Record<string, unknown>;
+    if (rawMode) {
+      try {
+        config = JSON.parse(rawText);
+      } catch {
+        setErr("Config must be valid JSON.");
+        return;
+      }
+    } else {
+      const fields = CMS_FIELDS[kind];
+      const missing = fields.filter((f) => !f.optional && !(cmsValues[f.name] ?? "").trim());
+      if (missing.length) {
+        setErr(`Fill in: ${missing.map((f) => f.label).join(", ")}.`);
+        return;
+      }
+      config = {};
+      for (const f of fields) {
+        const v = (cmsValues[f.name] ?? "").trim();
+        if (v) config[f.name] = v;
+      }
     }
     start(async () => {
       const res = await fetch(`/api/sites/${siteId}/integrations`, {
@@ -73,6 +138,7 @@ export function IntegrationsClient({
       const created = await res.json();
       setItems((l) => [...l, created]);
       setLabel("");
+      setCmsValues({});
     });
   };
 
@@ -85,6 +151,25 @@ export function IntegrationsClient({
         body: JSON.stringify({ ga4PropertyId: ga4.trim() }),
       });
       setGa4Msg(res.ok ? "Saved." : "Could not save — check the property id.");
+    });
+  };
+
+  const testConn = (which: "gsc" | "ga4") => {
+    const setMsg = which === "gsc" ? setGscMsg : setGa4Msg;
+    setMsg("Testing…");
+    start(async () => {
+      const res = await fetch(`/api/integrations/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId, kind: which }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; verifiedAt?: string | null };
+      setMsg(j.message ?? "Test failed.");
+      if (which === "gsc" && j.ok && j.verifiedAt) {
+        setItems((l) =>
+          l.map((i) => (i.kind === "gsc" ? { ...i, lastVerifiedAt: j.verifiedAt!, status: "connected" } : i)),
+        );
+      }
     });
   };
 
@@ -139,6 +224,7 @@ export function IntegrationsClient({
         {gscRow ? (
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1.5 text-green-700"><span className="font-bold">✓</span> Connected</span>
+            <button disabled={pending} onClick={() => testConn("gsc")} className="px-2.5 py-1 border rounded bg-white hover:bg-black/5 text-xs">Test connection</button>
             <a href={`/api/integrations/gsc/connect?siteId=${siteId}`} className="text-xs underline opacity-80 hover:opacity-100">Reconnect</a>
             <button onClick={() => remove(gscRow.id, "Disconnect Search Console?")} className="text-xs underline text-red-700/80 hover:text-red-700">Disconnect</button>
           </div>
@@ -147,6 +233,7 @@ export function IntegrationsClient({
             Connect Search Console
           </a>
         )}
+        {gscMsg && <div className="text-xs mt-2 opacity-80">{gscMsg}</div>}
       </section>
 
       {/* Google Analytics 4 */}
@@ -164,11 +251,12 @@ export function IntegrationsClient({
             className="border rounded px-2 py-1 w-56"
           />
           <button disabled={pending} onClick={saveGa4} className="px-3 py-1 border rounded">Save</button>
+          <button disabled={pending} onClick={() => testConn("ga4")} className="px-3 py-1 border rounded">Test connection</button>
           <span className="text-xs">
             {ga4.trim() ? (gscRow ? <span className="text-green-700">✓ ready (shares Search Console connection)</span> : <span className="opacity-70">set — connect Search Console to activate</span>) : <span className="opacity-50">not set</span>}
           </span>
-          {ga4Msg && <span className="text-xs opacity-70">{ga4Msg}</span>}
         </div>
+        {ga4Msg && <div className="text-xs mt-2 opacity-80">{ga4Msg}</div>}
       </section>
 
       {/* Slack */}
@@ -203,13 +291,16 @@ export function IntegrationsClient({
           <p className="opacity-60 text-xs">None yet.</p>
         ) : (
           <table className="w-full">
-            <thead><tr className="text-left opacity-60 text-xs"><th className="py-1">Kind</th><th>Label</th><th>Status</th><th /></tr></thead>
+            <thead><tr className="text-left opacity-60 text-xs"><th className="py-1">Kind</th><th>Label</th><th>Status</th><th>Last verified</th><th /></tr></thead>
             <tbody>
               {items.map((i) => (
                 <tr key={i.id} className="border-t border-black/10">
                   <td className="py-2">{i.kind}</td>
                   <td>{i.label ?? "—"}</td>
                   <td>{i.status}</td>
+                  <td className="opacity-70" title={i.lastVerifiedAt ? new Date(i.lastVerifiedAt).toISOString() : undefined}>
+                    {i.lastVerifiedAt && now !== null ? relativeTime(i.lastVerifiedAt, now) : "—"}
+                  </td>
                   <td><button onClick={() => remove(i.id)} className="underline text-xs">Delete</button></td>
                 </tr>
               ))}
@@ -218,13 +309,22 @@ export function IntegrationsClient({
         )}
       </section>
 
-      {/* Generic CMS / publishing integration */}
+      {/* Structured CMS / publishing integration */}
       <section className="border-t border-black/10 pt-4">
-        <h2 className="text-base font-medium mb-2">Add a CMS / publishing integration</h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-base font-medium">Add a CMS / publishing integration</h2>
+          <button
+            type="button"
+            onClick={() => setRawMode((v) => !v)}
+            className="text-xs underline opacity-60 hover:opacity-100"
+          >
+            {rawMode ? "Use guided form" : "Paste raw JSON instead"}
+          </button>
+        </div>
         <div className="space-y-2">
           <label className="block">
             <span className="block opacity-70 mb-1 text-xs">Kind</span>
-            <select className="w-full border rounded px-2 py-1" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+            <select className="w-full border rounded px-2 py-1" value={kind} onChange={(e) => setKindReset(e.target.value as CmsKind)}>
               {CMS_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
           </label>
@@ -232,10 +332,27 @@ export function IntegrationsClient({
             <span className="block opacity-70 mb-1 text-xs">Label (optional)</span>
             <input className="w-full border rounded px-2 py-1" value={label} onChange={(e) => setLabel(e.target.value)} />
           </label>
-          <label className="block">
-            <span className="block opacity-70 mb-1 text-xs">Config (JSON)</span>
-            <textarea rows={6} className="w-full border rounded px-2 py-1 font-mono text-xs" value={configText} onChange={(e) => setConfigText(e.target.value)} />
-          </label>
+
+          {rawMode ? (
+            <label className="block">
+              <span className="block opacity-70 mb-1 text-xs">Config (JSON)</span>
+              <textarea rows={6} className="w-full border rounded px-2 py-1 font-mono text-xs" value={rawText} onChange={(e) => setRawText(e.target.value)} />
+            </label>
+          ) : (
+            CMS_FIELDS[kind].map((f) => (
+              <label key={f.name} className="block">
+                <span className="block opacity-70 mb-1 text-xs">{f.label}{f.optional ? " (optional)" : ""}</span>
+                <input
+                  type={f.type === "password" ? "password" : "text"}
+                  inputMode={f.type === "url" ? "url" : undefined}
+                  placeholder={f.placeholder}
+                  className="w-full border rounded px-2 py-1"
+                  value={cmsValues[f.name] ?? ""}
+                  onChange={(e) => setCmsValues((v) => ({ ...v, [f.name]: e.target.value }))}
+                />
+              </label>
+            ))
+          )}
           {err && <div className="text-red-700 text-xs">{err}</div>}
           <button disabled={pending} onClick={submitCms} className="px-3 py-1 border rounded">Save</button>
         </div>

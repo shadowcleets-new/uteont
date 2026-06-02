@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db/client";
 import { sites, type Site } from "@/lib/db/schema";
 import { eq, ne } from "drizzle-orm";
 import type { SiteCreateInput, SiteUpdateInput } from "@/lib/validation/site";
+import { looksLikeKeyConflict } from "./site-errors";
 
 export class SiteKeyTakenError extends Error {
   constructor(key: string) {
@@ -38,14 +39,24 @@ export async function createSite(input: SiteCreateInput): Promise<Site> {
     }).returning();
     return row;
   } catch (e) {
-    // Neon HTTP returns errors about unique constraint violations on the key.
-    // Since the only unique constraint on insert is the key, treat any
-    // insert error as a key violation.
     const msg = e instanceof Error ? e.message : String(e);
-    // Check for the specific constraint name or common duplicate/constraint patterns
-    if (/sites_key_unique_idx|duplicate.*key|unique.*constraint/i.test(msg) ||
-        (msg.includes("Failed query") && msg.includes("insert into \"sites\""))) {
+    // Fast path: an unambiguous uniqueness violation means the key is taken.
+    if (looksLikeKeyConflict(msg)) {
       throw new SiteKeyTakenError(input.key);
+    }
+    // neon-http hides BOTH a real uniqueness violation AND a transient
+    // connection failure behind a generic "Failed query: insert into ...".
+    // Disambiguate by checking whether the key actually exists rather than
+    // blaming the key for every insert failure (which mis-reported DB outages
+    // to the user as "Site key already in use").
+    try {
+      if (await getSiteByKey(input.key)) {
+        throw new SiteKeyTakenError(input.key);
+      }
+    } catch (lookupErr) {
+      if (lookupErr instanceof SiteKeyTakenError) throw lookupErr;
+      // The lookup itself failed (e.g. DB unreachable) — fall through and
+      // surface the original insert error, which is the truthful cause.
     }
     throw e;
   }
