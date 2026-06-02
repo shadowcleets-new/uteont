@@ -38,9 +38,9 @@ export function RunAgentButton({ agentKey, disabled }: RunAgentButtonProps) {
         <label key={f.name} className="block">
           <span className="text-[12px] text-[#6b6a64]">{f.label}</span>
           {f.type === "textarea" ? (
-            <textarea name={f.name} rows={3} placeholder={f.placeholder} className={fieldCls} />
+            <textarea name={f.name} rows={3} placeholder={f.placeholder} required={f.required} className={fieldCls} />
           ) : (
-            <input name={f.name} type={f.type === "url" ? "url" : "text"} placeholder={f.placeholder} className={fieldCls} />
+            <input name={f.name} type={f.type === "url" ? "url" : "text"} placeholder={f.placeholder} required={f.required} className={fieldCls} />
           )}
           {f.help && <span className="block text-[11px] text-[#9a988e] mt-0.5">{f.help}</span>}
         </label>

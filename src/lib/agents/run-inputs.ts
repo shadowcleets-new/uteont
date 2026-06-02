@@ -13,6 +13,8 @@ export interface AgentInputField {
   type: "text" | "url" | "textarea";
   placeholder?: string;
   help?: string;
+  /** When true the Run form requires a value and the live-stream button is hidden. */
+  required?: boolean;
 }
 
 const urlOverride: AgentInputField = {
@@ -41,8 +43,56 @@ export const AGENT_INPUTS: Record<string, AgentInputField[]> = {
     { name: "topic", label: "Topic", type: "text", placeholder: "e.g. B2B textile manufacturing — a buyer's guide" },
     { name: "keyword", label: "Primary keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
   ],
+  // Inline (fn) text linters — they operate on a pasted article, so the field is required.
+  qa: [
+    { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste the draft to QA…", required: true },
+    { name: "targetKeyword", label: "Target keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
+  ],
+  "seo-optimization": [
+    { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste the draft to lint…", required: true },
+    { name: "targetKeyword", label: "Target keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
+  ],
+  // Worker (Railway) agents — required fields the worker validates (raises ValueError otherwise).
+  "idea-generation": [
+    {
+      name: "keywords",
+      label: "Seed keywords (one per line)",
+      type: "textarea",
+      placeholder: "textile manufacturing\nB2B sourcing",
+      help: "Runs on the browser worker — each keyword yields a few content ideas.",
+      required: true,
+    },
+  ],
+  "content-writing": [
+    { name: "title", label: "Working title", type: "text", placeholder: "The B2B Buyer's Guide to Textile Manufacturing", required: true },
+    { name: "brief", label: "Brief / outline", type: "textarea", placeholder: "Audience, angle, key sections to cover…", required: true, help: "Runs on the browser worker (AI Studio drafting)." },
+    { name: "targetKeyword", label: "Target keyword (optional)", type: "text" },
+  ],
+  backlink: [
+    { name: "targetSite", label: "Target site / domain", type: "text", placeholder: "example.com", required: true },
+    { name: "ourValue", label: "Why they should link to us", type: "textarea", placeholder: "The unique value our page offers their readers…", required: true },
+    { name: "context", label: "Context (their page / topic)", type: "textarea", placeholder: "Which of their pages, and why it's relevant…", required: true },
+  ],
+  research: [
+    {
+      name: "seeds",
+      label: "Seed topics (one per line, optional)",
+      type: "textarea",
+      placeholder: "defaults to the site's niche",
+      help: "Runs on the browser worker.",
+    },
+  ],
 };
 
 export function inputsForAgent(key: string): AgentInputField[] {
   return AGENT_INPUTS[key] ?? [];
+}
+
+/**
+ * True when an agent has a required pasted input (e.g. qa/seo need an article).
+ * The live-stream "Run live" button can only pass a siteId, so it is hidden for
+ * these — they must run through the input-bearing Run form instead.
+ */
+export function requiresPastedInput(key: string): boolean {
+  return inputsForAgent(key).some((f) => f.required);
 }

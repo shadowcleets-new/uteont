@@ -38,19 +38,31 @@ export async function POST(req: NextRequest) {
     };
 
     // Optional per-agent inputs (see lib/agents/run-inputs.ts). Threaded into the
-    // payload so the inline runners receive them.
+    // payload so the inline runners (and worker handlers) receive them. Field
+    // names match exactly what the runners/worker read.
     const payload: Record<string, unknown> = { site: siteSnapshot };
-    const url = String(form.get("url") ?? "").trim();
-    const topic = String(form.get("topic") ?? "").trim();
-    const keyword = String(form.get("keyword") ?? "").trim();
-    const competitors = String(form.get("competitors") ?? "")
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (url) payload.url = url;
-    if (topic) payload.topic = topic;
-    if (keyword) payload.keyword = keyword;
+    const str = (k: string) => String(form.get(k) ?? "").trim();
+    const list = (k: string) =>
+      str(k)
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    // Single-value string inputs, threaded verbatim when present.
+    for (const k of [
+      "url", "topic", "keyword", "article", "targetKeyword",
+      "title", "brief", "targetSite", "ourValue", "context",
+    ]) {
+      const v = str(k);
+      if (v) payload[k] = v;
+    }
+    // List inputs (newline/comma separated).
+    const competitors = list("competitors");
     if (competitors.length) payload.competitors = competitors;
+    const keywords = list("keywords");
+    if (keywords.length) payload.keywords = keywords;
+    const seeds = list("seeds");
+    if (seeds.length) payload.seeds = seeds;
 
     await runAgent({ agentKey, siteId, payload });
   } catch (e: unknown) {

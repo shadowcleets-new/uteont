@@ -23,6 +23,11 @@ import { ContentBriefReport } from "./content-brief-report";
 import type { ContentBriefResult } from "@/lib/agent-runners/content-brief";
 import { ContentDraftReport } from "./content-draft-report";
 import type { DraftResult } from "@/lib/agent-runners/content-draft";
+import { QaReport } from "./qa-report";
+import type { QaResult } from "@/lib/agent-runners/qa";
+import { SeoReport } from "./seo-report";
+import type { SeoResult } from "@/lib/agent-runners/seo-optimization";
+import { requiresPastedInput } from "@/lib/agents/run-inputs";
 import { LiveStatus } from "@/components/live-status";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +73,17 @@ export default async function AgentPage({ params }: PageProps) {
       ? (recentRuns.find((r) => r.result && typeof (r.result as { configured?: unknown }).configured === "boolean")
           ?.result as unknown as PerformanceResult | undefined)
       : undefined;
+  // QA result carries an `approved` boolean; SEO result carries a `headingStructure` array.
+  const latestQa =
+    key === "qa"
+      ? (recentRuns.find((r) => r.result && typeof (r.result as { approved?: unknown }).approved === "boolean")
+          ?.result as unknown as QaResult | undefined)
+      : undefined;
+  const latestSeo =
+    key === "seo-optimization"
+      ? (recentRuns.find((r) => r.result && Array.isArray((r.result as { headingStructure?: unknown }).headingStructure))
+          ?.result as unknown as SeoResult | undefined)
+      : undefined;
 
   let pill: PillState = "Idle";
   if (!agent.implemented) pill = "Planned";
@@ -109,7 +125,12 @@ export default async function AgentPage({ params }: PageProps) {
         </div>
       </div>
 
-      {agent.implemented && <AgentStream agentKey={agent.key} />}
+      {/* Live stream is only meaningful for inline (fn) agents that need no
+          pasted input — it can pass a siteId but not an article. qa/seo and the
+          worker agents run through the input-bearing Run form above. */}
+      {agent.implemented && agent.runtime === "fn" && !requiresPastedInput(agent.key) && (
+        <AgentStream agentKey={agent.key} />
+      )}
 
       {latestTechAudit && <TechnicalSeoReport result={latestTechAudit} />}
       {latestContentAudit && <ContentAuditReport result={latestContentAudit} />}
@@ -118,6 +139,8 @@ export default async function AgentPage({ params }: PageProps) {
       {latestRevenue && <RevenueReport result={latestRevenue} />}
       {latestBrief && <ContentBriefReport result={latestBrief} />}
       {latestDraft && <ContentDraftReport result={latestDraft} />}
+      {latestQa && <QaReport result={latestQa} />}
+      {latestSeo && <SeoReport result={latestSeo} />}
 
       {/* STATS */}
       <section className="mb-6">
