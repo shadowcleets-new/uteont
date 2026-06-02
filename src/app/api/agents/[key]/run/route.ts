@@ -34,7 +34,13 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     bannedPhrases: site.bannedPhrases,
   };
 
-  const enhancedPayload = { ...(parsed.payload ?? {}), site: siteSnapshot };
+  // Strip any client-supplied _directorContext: only the Director sets that
+  // (server-side, via dispatchAgentJob) to route a job result back into a
+  // conversation. Accepting it from an arbitrary authenticated caller would let
+  // them inject a forged "job-completed" message into someone else's thread.
+  const clientPayload: Record<string, unknown> = { ...(parsed.payload ?? {}) };
+  delete clientPayload._directorContext;
+  const enhancedPayload = { ...clientPayload, site: siteSnapshot };
 
   try {
     const result = await runAgent({

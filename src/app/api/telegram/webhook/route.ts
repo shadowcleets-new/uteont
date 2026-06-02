@@ -88,10 +88,12 @@ export async function POST(req: NextRequest) {
           await routeToDirector(chatId, text);
         }
       } catch (e) {
-        const err = e as Error;
+        // Log the full error server-side; reply generically so raw internal
+        // exception text (DB / Gemini details) never leaks into the chat.
+        console.error("[telegram] director routing failed:", e);
         await sendMessage({
           chatId,
-          text: `Director error: ${err.message.slice(0, 400)}`,
+          text: "Director couldn't process that — please retry shortly. (Details are in the server logs.)",
         });
       }
     }
