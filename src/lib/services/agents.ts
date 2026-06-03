@@ -8,6 +8,7 @@ import { findAgent } from "@/lib/agents/registry";
 import { INLINE_RUNNERS, hasInlineRunner } from "@/lib/agent-runners";
 import { startRun, finishRun } from "./runs";
 import { dispatchAgentJob } from "./jobs";
+import { assertAgentNotPaused } from "./agent-state";
 
 export interface RunAgentResult {
   mode: "inline" | "enqueued" | "cached";
@@ -27,6 +28,7 @@ export async function runAgent(opts: {
   const spec = findAgent(opts.agentKey);
   if (!spec) throw new Error(`unknown agent '${opts.agentKey}'`);
   if (!spec.implemented) throw new Error(`agent '${opts.agentKey}' is not implemented yet`);
+  await assertAgentNotPaused(opts.agentKey); // operator pause (Settings) blocks runs
 
   const payload = opts.payload ?? {};
 

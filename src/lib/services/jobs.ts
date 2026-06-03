@@ -2,6 +2,7 @@ import { eq, sql, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
+import { assertAgentNotPaused } from "./agent-state";
 import {
   isDedupeEligible,
   isCacheableResult,
@@ -54,6 +55,7 @@ export type DispatchResult =
 export async function dispatchAgentJob(
   input: EnqueueJobInput & { forceFresh?: boolean },
 ): Promise<DispatchResult> {
+  await assertAgentNotPaused(input.agentKey); // operator pause (Settings) blocks dispatch
   const payload: Record<string, unknown> = { ...input.payload };
 
   if (isDedupeEligible(input.agentKey) && !input.forceFresh) {

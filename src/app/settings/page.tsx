@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { AGENTS } from "@/lib/agents/registry";
+import { pausedAgentKeys } from "@/lib/services/agent-state";
+import { pauseAgentAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +27,7 @@ const LINKS = [
 
 export default async function SettingsPage() {
   const db = await dbReachable();
+  const paused = await pausedAgentKeys();
   const config: Array<{ label: string; on: boolean; hint: string }> = [
     { label: "Database (DATABASE_URL)", on: isSet(process.env.DATABASE_URL), hint: "Neon Postgres" },
     { label: "Integration encryption (CONNECTION_ENCRYPTION_KEY)", on: isSet(process.env.CONNECTION_ENCRYPTION_KEY), hint: "needed for GSC/GA4/Slack" },
@@ -67,6 +71,41 @@ export default async function SettingsPage() {
           <span className="text-[13px] text-[#141413] font-medium">Database</span>
           <span className="text-[12px] text-[#6b6a64]">{db ? "connected" : "unreachable"}</span>
         </div>
+      </section>
+
+      <section className="mb-8">
+        <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">AGENTS</div>
+        <div className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden">
+          {AGENTS.filter((a) => a.implemented).map((a) => {
+            const isPaused = paused.has(a.key);
+            return (
+              <div key={a.key} className="flex items-center gap-3 px-4 py-2.5 border-t border-[#f3f1ea] first:border-t-0">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ background: isPaused ? "#d9bd7c" : "#788c5d" }}
+                />
+                <span className="text-[13px] text-[#141413] font-medium">{a.name}</span>
+                <span className="text-[11px] text-[#9a988e]">{a.runtime === "fn" ? "inline" : "worker"}</span>
+                <span className="text-[11px] ml-auto shrink-0" style={{ color: isPaused ? "#8a6516" : "#788c5d" }}>
+                  {isPaused ? "Paused" : "Active"}
+                </span>
+                <form action={pauseAgentAction} className="shrink-0">
+                  <input type="hidden" name="agentKey" value={a.key} />
+                  <input type="hidden" name="paused" value={isPaused ? "false" : "true"} />
+                  <button
+                    type="submit"
+                    className="text-[12px] px-2.5 py-1 rounded border border-[#e0ddd2] hover:border-[#d97757] text-[#141413] transition-colors"
+                  >
+                    {isPaused ? "Resume" : "Pause"}
+                  </button>
+                </form>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-[#9a988e] mt-3 font-serif">
+          Paused agents reject new runs — from the Run forms and the Director — until resumed.
+        </p>
       </section>
 
       <section>
