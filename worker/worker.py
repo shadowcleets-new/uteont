@@ -70,28 +70,10 @@ def handle_research(payload: dict) -> dict:
     return run(progress=lambda m: log.info("research: %s", m), cfg=cfg)
 
 
-def handle_qa(payload: dict) -> dict:
-    from agents.qa_agent.qa_agent import validate
-    article = (payload.get("article") or "").strip()
-    if not article:
-        raise ValueError("qa requires 'article' in payload")
-    return validate(
-        article,
-        target_keyword=payload.get("targetKeyword"),
-        progress=lambda m: log.info("qa: %s", m),
-    )
-
-
-def handle_seo(payload: dict) -> dict:
-    from agents.seo_optimization_agent.seo_agent import optimize
-    article = (payload.get("article") or "").strip()
-    if not article:
-        raise ValueError("seo requires 'article' in payload")
-    return optimize(
-        article,
-        target_keyword=payload.get("targetKeyword"),
-        progress=lambda m: log.info("seo: %s", m),
-    )
+# NOTE: qa & seo-optimization now run inline on Vercel (TS ports in
+# src/lib/agent-runners/{qa,seo-optimization}.ts). The registry routes them to
+# the "fn" runtime, so the worker never receives those jobs — the old
+# handle_qa/handle_seo handlers were dead and have been removed.
 
 
 def handle_idea_generation(payload: dict) -> dict:
@@ -149,8 +131,6 @@ def handle_outreach(payload: dict) -> dict:
 
 HANDLERS: dict[str, Callable[[dict], dict]] = {
     "research":         handle_research,
-    "qa":               handle_qa,
-    "seo-optimization": handle_seo,
     "idea-generation":  handle_idea_generation,
     "content-writing":  handle_content_writing,
     "backlink":         handle_outreach,
