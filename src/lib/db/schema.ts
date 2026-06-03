@@ -109,7 +109,7 @@ export const runs = pgTable(
     startedAt:   timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt:  timestamp("finished_at", { withTimezone: true }),
     status:      text("status").notNull().default("running"),
-    result:      jsonb("result"),
+    result:      jsonb("result").$type<Record<string, unknown>>(),
     error:       text("error"),
   },
   (t) => ({

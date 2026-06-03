@@ -48,8 +48,8 @@ This document is operator-facing — keep it current when procedures change.
 
 | Cron | When | What |
 |---|---|---|
-| `/api/cron/performance` | Daily 07:00 UTC | (Stub — populates `performance.json` when GSC wired) |
-| `/api/cron/digest` | Sundays 09:00 UTC | Sends Telegram weekly digest + purges old jobs / login attempts (>30d) |
+| `/api/cron/daily` | Daily 06:00 UTC | Pulls Search Console for every site with a GSC integration; snapshots every active target |
+| `/api/cron/digest` | Mondays 13:00 UTC | Sends Telegram digest + purges old jobs / login attempts (>30d) |
 
 Both are auto-authed by Vercel (`CRON_SECRET`). Middleware rejects calls with the wrong bearer.
 

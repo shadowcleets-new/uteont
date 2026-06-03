@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach, beforeEach } from "vitest";
 import { getDb } from "@/lib/db/client";
-import { sites, siteIntegrations } from "@/lib/db/schema";
-import { eq, like } from "drizzle-orm";
+import { sites } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { createSite } from "./sites";
 import {
   createIntegration, getIntegration, listIntegrations,

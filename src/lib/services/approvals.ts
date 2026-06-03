@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { approvals } from "@/lib/db/schema";
 

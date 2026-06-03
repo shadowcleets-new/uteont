@@ -61,13 +61,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string
 
         send("phase", { phase: "running", label: `Running ${agent.name}…`, elapsedMs: elapsed() });
 
-        // Best-effort persistence (no-op if the DB is unreachable).
+        // Best-effort persistence (no-op if the DB is unreachable). Only start a
+        // run when we resolved a real site — startRun rejects siteId 0, which
+        // previously made every site-less stream silently skip persistence.
         let runId: number | null = null;
-        try {
-          const r = await startRun({ subjectKey: `agent.${key}`, category: "agent", action: "stream", siteId: site?.id ?? 0 });
-          runId = r?.id ?? null;
-        } catch {
-          /* DB down — stream anyway */
+        if (site) {
+          try {
+            const r = await startRun({ subjectKey: `agent.${key}`, category: "agent", action: "stream", siteId: site.id });
+            runId = r?.id ?? null;
+          } catch {
+            /* DB down — stream anyway */
+          }
         }
 
         const runPromise = INLINE_RUNNERS[key]({ payload: { site: siteSnapshot } });

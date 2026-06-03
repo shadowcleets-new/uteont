@@ -18,8 +18,11 @@ export class IntegrationNotFoundError extends Error {
 
 function toListItem(row: SiteIntegration): IntegrationListItem {
   // Strip the encrypted-blob columns; consumers should never see them.
-  const { config: _c, configIv: _iv, configTag: _t, ...rest } = row;
-  return rest;
+  const rest: Partial<SiteIntegration> = { ...row };
+  delete rest.config;
+  delete rest.configIv;
+  delete rest.configTag;
+  return rest as IntegrationListItem;
 }
 
 export async function createIntegration(

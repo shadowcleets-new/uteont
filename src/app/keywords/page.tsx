@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { keywords, type Keyword } from "@/lib/db/schema";
 import { fmtAgo } from "@/lib/services/stats";

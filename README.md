@@ -117,8 +117,8 @@ Authenticated (middleware enforces `Authorization: Bearer <secret>`):
 | `POST /api/jobs/claim` | `WORKER_SHARED_SECRET` | Worker claims next queued job atomically |
 | `POST /api/jobs/[id]/complete` | `WORKER_SHARED_SECRET` | Worker reports success + result |
 | `POST /api/jobs/[id]/fail` | `WORKER_SHARED_SECRET` | Worker reports failure (retry-aware) |
-| `GET /api/cron/performance` | `CRON_SECRET` | Daily 07:00 — pulls GSC (stub for now) |
-| `GET /api/cron/digest` | `CRON_SECRET` | Sunday 09:00 — Telegram digest |
+| `GET /api/cron/daily` | `CRON_SECRET` | Daily 06:00 UTC — pulls Search Console for every connected site + snapshots active targets |
+| `GET /api/cron/digest` | `CRON_SECRET` | Monday 13:00 UTC — Telegram digest + purge of old jobs/login attempts |
 | `POST /api/telegram/webhook` | `X-Telegram-Bot-Api-Secret-Token` | Inline-keyboard callbacks |
 
 ## Database
