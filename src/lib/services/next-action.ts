@@ -55,6 +55,12 @@ const METRIC_ROUTE: Record<string, { agentKey: string | null; label: string; ver
 
 const FALLBACK = { agentKey: null as string | null, label: "", verb: "make progress on this objective" };
 
+/** The agent that moves a given target metric (null for `manual`), plus its label. */
+export function agentForMetric(metric: string): { agentKey: string | null; label: string } {
+  const r = METRIC_ROUTE[metric] ?? FALLBACK;
+  return { agentKey: r.agentKey, label: r.label };
+}
+
 /**
  * Pick the highest-priority action across a site's targets, or null when there's
  * nothing to nudge (no active targets, or every active target is already hit).

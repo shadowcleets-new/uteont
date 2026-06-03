@@ -1,6 +1,7 @@
 import type { TargetWithProgress } from "@/lib/services/targets";
 import { TARGET_METRICS } from "@/lib/services/targets";
 import { linearRegression, projectRegression, regressionConfidenceLevel, type TrendPoint } from "@/lib/services/target-history";
+import type { Intervention } from "@/lib/services/run-interventions";
 import { TargetSparkline } from "@/components/target-sparkline";
 import { TrajectoryChart } from "@/components/target-trajectory";
 import { deleteTargetAction, updateTargetAction, setTargetStatusAction, updateManualCurrentAction } from "./actions";
@@ -51,7 +52,7 @@ function ConfidenceChip({ level }: { level: "low" | "medium" | "high" }) {
   );
 }
 
-export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history?: TrendPoint[] }) {
+export function TargetCard({ t, history = [], interventions = [] }: { t: TargetWithProgress; history?: TrendPoint[]; interventions?: Intervention[] }) {
   const p = t.progress;
   const s = STATUS[p.status] ?? STATUS["off-track"];
   const fillPct = clamp(p.progressPct, 0, 100);
@@ -133,6 +134,7 @@ export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history
             projected={projected}
             bandAtDeadline={band}
             direction={direction}
+            interventions={interventions.filter((iv) => iv.atMs >= startMs && iv.atMs <= deadlineMs)}
           />
         )}
       </div>

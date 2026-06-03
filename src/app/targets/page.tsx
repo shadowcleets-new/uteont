@@ -3,6 +3,7 @@ import { kvSettings, sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { listTargetsWithProgress } from "@/lib/services/targets";
 import { captureSnapshots, snapshotsByTarget } from "@/lib/services/target-snapshots";
+import { getInterventionsForTarget, type Intervention } from "@/lib/services/run-interventions";
 import { TargetCard } from "./target-card";
 import { TargetCreateForm } from "./target-create-form";
 
@@ -60,6 +61,16 @@ export default async function TargetsPage() {
   await captureSnapshots(items.map((t) => ({ id: t.id, value: t.current })));
   const history = await snapshotsByTarget(items.map((t) => t.id)).catch(() => new Map());
 
+  // Intervention markers: recent runs of each target's producing agent, on this
+  // site, drawn as ticks on the trajectory so cause (agent ran) ↔ effect (curve
+  // moved) is visible.
+  const interventions = new Map<number, Intervention[]>();
+  await Promise.all(
+    items.map(async (t) => {
+      interventions.set(t.id, await getInterventionsForTarget(activeSiteId, t.metric).catch(() => []));
+    }),
+  );
+
   return (
     <div className="px-9 py-8 max-w-[1100px]">
       <Header siteName={site?.name} />
@@ -67,7 +78,11 @@ export default async function TargetsPage() {
       {items.length === 0 ? (
         <EmptyCard text="No targets yet — set one above, then point the agents at it and watch the vector move." />
       ) : (
-        <div>{items.map((t) => <TargetCard key={t.id} t={t} history={history.get(t.id) ?? []} />)}</div>
+        <div>
+          {items.map((t) => (
+            <TargetCard key={t.id} t={t} history={history.get(t.id) ?? []} interventions={interventions.get(t.id) ?? []} />
+          ))}
+        </div>
       )}
     </div>
   );
