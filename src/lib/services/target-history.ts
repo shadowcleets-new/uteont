@@ -100,6 +100,76 @@ export function projectionConfidence(input: TrendPoint[]): Confidence {
   return { level, samples, stability: Math.round(stability * 100) / 100, paceStdDev: Math.round(sd * 100) / 100 };
 }
 
+export interface Regression {
+  /** value units per day */
+  slopePerDay: number;
+  /** fitted value at the first observation's timestamp */
+  intercept: number;
+  /** epoch ms of the first observation (the x origin) */
+  firstMs: number;
+  /** 0..1 coefficient of determination (goodness of fit) */
+  r2: number;
+  /** residual standard deviation, in value units — the projection band unit */
+  residualSd: number;
+  n: number;
+}
+
+/**
+ * Ordinary least-squares fit over the snapshot series (x in days from the first
+ * observation). This is the spec's regression-based projection: the fitted
+ * slope drives projected-at-deadline and R² drives the confidence tier — unlike
+ * a naive baseline→current average, it reflects RECENT velocity and how noisy
+ * the trajectory is. Pure + fully unit-testable. Returns null with < 2 points.
+ */
+export function linearRegression(input: TrendPoint[]): Regression | null {
+  const pts = input.map((p) => ({ x: ms(p.capturedAt), y: p.value })).sort((a, b) => a.x - b.x);
+  const n = pts.length;
+  if (n < 2) return null;
+
+  const firstMs = pts[0].x;
+  const xs = pts.map((p) => (p.x - firstMs) / DAY);
+  const ys = pts.map((p) => p.y);
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+
+  let sxx = 0, sxy = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - meanX;
+    const dy = ys[i] - meanY;
+    sxx += dx * dx;
+    sxy += dx * dy;
+    syy += dy * dy;
+  }
+  const slopePerDay = sxx > 0 ? sxy / sxx : 0;
+  const intercept = meanY - slopePerDay * meanX;
+
+  let ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    const pred = intercept + slopePerDay * xs[i];
+    ssRes += (ys[i] - pred) ** 2;
+  }
+  const r2 = syy > 0 ? Math.max(0, 1 - ssRes / syy) : 1;
+  const residualSd = Math.sqrt(ssRes / Math.max(1, n - 2));
+
+  return { slopePerDay, intercept, firstMs, r2, residualSd, n };
+}
+
+/** Project the fitted line to an absolute timestamp. */
+export function projectRegression(reg: Regression, atMs: number): number {
+  return reg.intercept + reg.slopePerDay * ((atMs - reg.firstMs) / DAY);
+}
+
+/**
+ * Confidence tier from the regression fit, per the spec: High needs a strong
+ * fit (R² ≥ 0.8) and enough points; Medium a moderate fit; otherwise Low.
+ */
+export function regressionConfidenceLevel(reg: Regression | null): "low" | "medium" | "high" {
+  if (!reg || reg.n < 3) return "low";
+  if (reg.r2 >= 0.8 && reg.n >= 5) return "high";
+  if (reg.r2 >= 0.5 && reg.n >= 3) return "medium";
+  return "low";
+}
+
 /**
  * SVG polyline `d` attribute for a sparkline. x spreads evenly across `width`;
  * y maps min→bottom, max→top (SVG y grows downward) within `height`, padded so

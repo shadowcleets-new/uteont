@@ -1,8 +1,11 @@
 import type { TargetWithProgress } from "@/lib/services/targets";
 import { TARGET_METRICS } from "@/lib/services/targets";
-import { projectionConfidence, type TrendPoint } from "@/lib/services/target-history";
+import { linearRegression, projectRegression, regressionConfidenceLevel, type TrendPoint } from "@/lib/services/target-history";
 import { TargetSparkline } from "@/components/target-sparkline";
+import { TrajectoryChart } from "@/components/target-trajectory";
 import { deleteTargetAction, updateTargetAction, setTargetStatusAction, updateManualCurrentAction } from "./actions";
+
+const DAY = 86_400_000;
 
 const editCls = "w-full rounded border border-[#e0ddd2] bg-white px-2 py-1 text-[12px] mt-0.5";
 
@@ -53,8 +56,19 @@ export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history
   const s = STATUS[p.status] ?? STATUS["off-track"];
   const fillPct = clamp(p.progressPct, 0, 100);
   const onPacePct = clamp(p.daysTotal > 0 ? (p.daysElapsed / p.daysTotal) * 100 : 0, 0, 100);
-  const conf = projectionConfidence(history);
-  const band = Math.round(conf.paceStdDev * Math.max(0, p.daysRemaining));
+
+  // Regression-based projection over the snapshot history (spec keystone): the
+  // fitted slope drives the projected-at-deadline value, R² drives confidence,
+  // and the residual spread sets the cone's ± band at the deadline.
+  const reg = linearRegression(history);
+  const confLevel = regressionConfidenceLevel(reg);
+  const direction: "increase" | "decrease" = t.goalValue >= t.baselineValue ? "increase" : "decrease";
+  const deadlineMs = new Date(t.deadlineAt as unknown as string).getTime();
+  const hasAxis = Number.isFinite(deadlineMs) && p.daysTotal > 0;
+  const startMs = deadlineMs - p.daysTotal * DAY;
+  const nowMs = startMs + p.daysElapsed * DAY;
+  const projected = reg ? projectRegression(reg, deadlineMs) : p.projectedAtDeadline;
+  const band = reg ? Math.round(reg.residualSd * Math.sqrt(Math.max(1, p.daysRemaining))) : 0;
 
   return (
     <div className="rounded-[10px] border border-[#e8e6dc] bg-white p-5 mb-3">
@@ -96,16 +110,31 @@ export function TargetCard({ t, history = [] }: { t: TargetWithProgress; history
         <span><b className="text-[#141413]">{Math.round(p.progressPct)}%</b> of goal</span>
         <span>ETA <b className="text-[#141413]">{fmtDate(p.etaMs)}</b></span>
         <span><b className="text-[#141413]">{Math.max(0, Math.round(p.daysRemaining))}</b> days left</span>
-        <span>projected <b className="text-[#141413]">{Math.round(p.projectedAtDeadline)}</b>{band > 0 ? ` ±${band}` : ""}</span>
+        <span>projected <b className="text-[#141413]">{Math.round(projected)}</b>{band > 0 ? ` ±${band}` : ""}</span>
         <span>pace <b className="text-[#141413]">{p.actualPerDay.toFixed(2)}</b>/day vs {p.requiredPerDay.toFixed(2)} needed</span>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-[#f3f1ea] flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold tracking-wider text-[#9a988e]">TRAJECTORY</span>
-          <ConfidenceChip level={conf.level} />
+      <div className="mt-4 pt-3 border-t border-[#f3f1ea]">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold tracking-wider text-[#9a988e]">TRAJECTORY</span>
+            <ConfidenceChip level={confLevel} />
+          </div>
+          <TargetSparkline points={history} />
         </div>
-        <TargetSparkline points={history} />
+        {hasAxis && (
+          <TrajectoryChart
+            history={history}
+            baseline={t.baselineValue}
+            goal={t.goalValue}
+            startMs={startMs}
+            deadlineMs={deadlineMs}
+            nowMs={nowMs}
+            projected={projected}
+            bandAtDeadline={band}
+            direction={direction}
+          />
+        )}
       </div>
 
       {t.metric === "manual" && (

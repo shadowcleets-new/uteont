@@ -29,10 +29,20 @@ export function TargetCreateForm({ siteId }: { siteId: number }) {
         </div>
         <Field label="Metric (how progress is measured)">
           <select name="metric" defaultValue="articles_published" className={inputCls}>
-            {TARGET_METRICS.map((m) => (
-              <option key={m.key} value={m.key}>{m.label}</option>
-            ))}
+            {TARGET_METRICS.map((m) => {
+              const needs = m.key.startsWith("gsc_")
+                ? " — needs Search Console"
+                : m.key.startsWith("ga4_")
+                  ? " — needs GA4 connected"
+                  : "";
+              return (
+                <option key={m.key} value={m.key}>{m.label}{needs}</option>
+              );
+            })}
           </select>
+          <span className="text-[10px] text-[#9a988e] mt-1 block">
+            Search Console / GA4 metrics read 0 until that integration is connected on the site.
+          </span>
         </Field>
         <Field label="Direction">
           <select name="direction" defaultValue="increase" className={inputCls}>
