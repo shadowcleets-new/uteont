@@ -338,6 +338,8 @@ export const conversations = pgTable(
     planApproved:  boolean("plan_approved").notNull().default(false),
     surface:       text("surface").notNull().default("web"),  // web | telegram | both
     siteId:        integer("site_id").references(() => sites.id),
+    summary:       text("summary"),                                       // rolling summary of messages folded out of the window
+    summaryUpToId: integer("summary_up_to_id").notNull().default(0),       // highest message id covered by `summary`
     createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt:     timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),

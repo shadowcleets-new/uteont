@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createConversation, getConversation, getMessages } from "@/lib/services/conversations";
+import { createConversation, getConversation, getDirectorContext } from "@/lib/services/conversations";
 import { runDirectorTurn } from "@/lib/services/director";
 
 const BodySchema = z.object({
@@ -42,11 +42,12 @@ export async function POST(req: NextRequest) {
     conversation = await createConversation({ surface: "web", siteId });
   }
 
-  const history = await getMessages(conversation.id, 60);
+  const { summary, recent } = await getDirectorContext(conversation.id);
 
   const { message, response } = await runDirectorTurn({
     conversation,
-    history,
+    history: recent,
+    summary,
     newUserMessage: payload.text,
     surface: "web",
   });

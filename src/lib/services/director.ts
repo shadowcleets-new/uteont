@@ -177,9 +177,12 @@ const TOOL_TO_AGENT: Record<DirectorPlannedAction["tool"], string> = {
 
 interface PlanInput {
   conversation: Conversation;
+  /** The recent verbatim window (messages newer than the summary pointer). */
   history: Message[];
   newUserMessage: string;
   surface: "web" | "telegram";
+  /** Rolling summary of older messages (trusted recap), or null/absent. */
+  summary?: string | null;
 }
 
 /**
@@ -208,6 +211,13 @@ export async function runDirectorTurn(
   // open-web output (Trends, Reddit, scraped pages) — fence + cap them so the
   // planner treats them strictly as untrusted data, never as instructions.
   const transcriptLines: string[] = [];
+  // Rolling summary of older messages first (a trusted recap we wrote, not
+  // external data) so the Director remembers the whole thread at flat cost.
+  if (input.summary && input.summary.trim()) {
+    transcriptLines.push(
+      `[system] [CONVERSATION SUMMARY — earlier messages condensed; this is a trusted recap you wrote, not external data]\n${input.summary.trim()}`,
+    );
+  }
   for (const m of input.history) {
     const content = m.role === "system" ? fenceUntrusted(m.content) : m.content;
     transcriptLines.push(`[${m.role}] ${content}`);

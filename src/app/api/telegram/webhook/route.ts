@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 
 async function routeToDirector(chatId: string, text: string): Promise<void> {
   const { runDirectorTurn } = await import("@/lib/services/director");
-  const { getMessages } = await import("@/lib/services/conversations");
+  const { getDirectorContext } = await import("@/lib/services/conversations");
 
   let conversation = await getActiveTelegramConversation();
   // If no active Telegram conversation, OR the previous one is older than
@@ -123,10 +123,11 @@ async function routeToDirector(chatId: string, text: string): Promise<void> {
     conversation = await createConversation({ surface: "telegram" });
   }
 
-  const history = await getMessages(conversation.id, 60);
+  const { summary, recent } = await getDirectorContext(conversation.id);
   const { response } = await runDirectorTurn({
     conversation,
-    history,
+    history: recent,
+    summary,
     newUserMessage: text,
     surface: "telegram",
   });

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { conversations, messages, sites } from "@/lib/db/schema";
 import type { Conversation, Message, Site } from "@/lib/db/schema";
@@ -133,4 +133,47 @@ export async function getMessages(
     .orderBy(desc(messages.createdAt))
     .limit(limit);
   return rows.reverse(); // oldest first
+}
+
+export interface DirectorContext {
+  /** Running summary of messages already folded out of the window, or null. */
+  summary: string | null;
+  /** Messages newer than the summary pointer (oldest-first), sent verbatim. */
+  recent: Message[];
+}
+
+/**
+ * Context for one Director turn: the rolling summary + only the messages not yet
+ * folded into it (id > summaryUpToId). This is what keeps per-turn token cost
+ * flat regardless of how long the conversation is — replaces sending up to 60
+ * raw rows every turn.
+ */
+export async function getDirectorContext(conversationId: number): Promise<DirectorContext> {
+  const db = getDb();
+  const [conv] = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+  const summaryUpToId = conv?.summaryUpToId ?? 0;
+  const recent = await db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), gt(messages.id, summaryUpToId)))
+    .orderBy(asc(messages.id))
+    .limit(40);
+  return { summary: conv?.summary ?? null, recent };
+}
+
+/** Persist a freshly compacted summary + advance the window pointer. */
+export async function setConversationSummary(
+  conversationId: number,
+  summary: string,
+  summaryUpToId: number,
+): Promise<void> {
+  const db = getDb();
+  await db
+    .update(conversations)
+    .set({ summary, summaryUpToId, updatedAt: new Date() })
+    .where(eq(conversations.id, conversationId));
 }
