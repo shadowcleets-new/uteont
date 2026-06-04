@@ -486,6 +486,24 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
     } catch (e) {
       console.warn("failJob: notifyJobFailure failed", e);
     }
+    // Surface the failure in the Director web chat too (not just Telegram) —
+    // otherwise a failed job is silent and the user just sees nothing come back.
+    try {
+      const ctx = (row.payload as Record<string, unknown> | null)?.["_directorContext"] as
+        | { conversationId?: number }
+        | undefined;
+      if (ctx?.conversationId) {
+        const { appendMessage } = await import("./conversations");
+        await appendMessage({
+          conversationId: ctx.conversationId,
+          role: "system",
+          content: `${row.agentKey} job ${row.id} failed: ${error.slice(0, 300)}`,
+          payload: { kind: "job-failed", agentKey: row.agentKey, jobId: row.id, error: error.slice(0, 1000) },
+        });
+      }
+    } catch (e) {
+      console.warn("failJob: director-conversation update failed", e);
+    }
   }
 }
 
