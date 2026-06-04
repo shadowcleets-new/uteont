@@ -41,7 +41,13 @@ export const UpdateCycleRequest = z.object({
 
 export const UpdateKeywordRequest = z.object({
   status: z.enum(["researched", "approved", "in-progress", "published", "shelved"]).optional(),
-  shelvedReason: z.string().max(1000).optional(),
+  shelvedReason: z.string().max(1000).nullable().optional(),
+});
+
+export const BulkUpdateKeywordsRequest = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(500),
+  status: z.enum(["researched", "approved", "in-progress", "published", "shelved"]),
+  shelvedReason: z.string().max(1000).nullable().optional(),
 });
 
 // --- Ideas --------------------------------------------------------------

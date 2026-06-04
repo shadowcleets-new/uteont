@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { keywords } from "@/lib/db/schema";
 
@@ -16,19 +16,49 @@ export async function listKeywords(opts: { cycleId?: number; siteId?: number; st
     .limit(opts.limit ?? 500);
 }
 
+function buildStatusSet(patch: { status?: string; shelvedReason?: string | null }): Record<string, unknown> {
+  const setObj: Record<string, unknown> = {};
+  if (patch.status !== undefined) {
+    setObj.status = patch.status;
+    if (patch.status === "approved") setObj.approvedAt = new Date();
+    // Moving off "shelved" clears the stale reason; shelving keeps the provided one.
+    if (patch.status === "shelved") setObj.shelvedReason = patch.shelvedReason ?? null;
+    else setObj.shelvedReason = null;
+  } else if (patch.shelvedReason !== undefined) {
+    setObj.shelvedReason = patch.shelvedReason;
+  }
+  return setObj;
+}
+
 export async function updateKeyword(
   id: number,
-  patch: { status?: string; shelvedReason?: string },
+  patch: { status?: string; shelvedReason?: string | null },
 ) {
   const db = getDb();
-  const setObj: Record<string, unknown> = { ...patch };
-  if (patch.status === "approved") setObj.approvedAt = new Date();
+  const setObj = buildStatusSet(patch);
+  if (Object.keys(setObj).length === 0) return null;
   const [row] = await db
     .update(keywords)
     .set(setObj)
     .where(eq(keywords.id, id))
     .returning();
   return row ?? null;
+}
+
+/** Update many keywords at once (bulk approve / shelve / restore). Returns count. */
+export async function bulkUpdateKeywords(
+  ids: number[],
+  patch: { status: string; shelvedReason?: string | null },
+): Promise<number> {
+  if (!ids.length) return 0;
+  const db = getDb();
+  const setObj = buildStatusSet(patch);
+  const rows = await db
+    .update(keywords)
+    .set(setObj)
+    .where(inArray(keywords.id, ids))
+    .returning({ id: keywords.id });
+  return rows.length;
 }
 
 export async function bulkInsertKeywords(
