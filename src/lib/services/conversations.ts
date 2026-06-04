@@ -89,9 +89,11 @@ export async function updateConversation(
   >,
 ): Promise<void> {
   const db = getDb();
+  // Note: lastMessageAt is intentionally NOT touched here — it tracks message
+  // activity (set by appendMessage), so rename/archive must not re-sort the rail.
   await db
     .update(conversations)
-    .set({ ...patch, updatedAt: new Date(), lastMessageAt: new Date() })
+    .set({ ...patch, updatedAt: new Date() })
     .where(eq(conversations.id, id));
 }
 

@@ -14,9 +14,10 @@ import { getDirectorContext, setConversationSummary } from "./conversations";
 
 /** Pure: build the summarizer prompt. `system` messages are fenced as untrusted. */
 export function buildSummaryPrompt(existingSummary: string | null, evicted: Message[]): string {
-  const prior = existingSummary?.trim()
-    ? `Existing running summary:\n${existingSummary.trim()}`
-    : "There is no prior summary yet.";
+  // Cap the prior summary so the summarizer's INPUT stays bounded across many
+  // compactions (the model re-condenses it anyway; the output is also capped).
+  const trimmed = existingSummary?.trim().slice(0, 1500);
+  const prior = trimmed ? `Existing running summary:\n${trimmed}` : "There is no prior summary yet.";
   const lines = evicted
     .map((m) => `[${m.role}] ${m.role === "system" ? fenceUntrusted(m.content, 800) : m.content}`)
     .join("\n");
