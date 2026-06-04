@@ -10,9 +10,12 @@ and writes a ranked `keywords.json` consumed by the Idea Generation Agent.
 | **Google Trends** (pytrends) | none | Top + rising related queries per seed |
 | **Wikipedia** (urllib + REST) | none | Related article titles per seed |
 | **Reddit** (PRAW) | optional creds | Skipped if `REDDIT_*` env vars are unset |
+| **DataForSEO** (Labs Keyword Suggestions) | optional creds | **Real** monthly search volume + competition + 12-month trend. Skipped if `DATAFORSEO_*` env vars are unset |
 
-If Reddit is unconfigured the agent runs with the other two sources only —
-no error, just a log line.
+Every source is optional and fails independently — if one is unconfigured or
+errors, the agent continues with whatever the others produced (just a log line).
+When DataForSEO is configured its **real** search volume and competition override
+the free-tool estimates for any keyword it surfaces.
 
 ## Install
 
@@ -38,9 +41,25 @@ project-root requirements file.)
 | `REDDIT_CLIENT_ID`        | unset | Reddit app client ID (script type) |
 | `REDDIT_CLIENT_SECRET`    | unset | Reddit app secret |
 | `REDDIT_USER_AGENT`       | `dna-seo-research/0.1` | UA string |
+| `DATAFORSEO_LOGIN`        | unset | DataForSEO API login (email). Enables the DataForSEO source |
+| `DATAFORSEO_PASSWORD`     | unset | DataForSEO API password |
+| `DATAFORSEO_LOCATION_CODE`| `2840` | Location code (2840 = United States) |
+| `DATAFORSEO_LANGUAGE_CODE`| `en` | Language code |
+| `DATAFORSEO_LIMIT`        | `30` | Max keyword suggestions fetched per seed |
 
 Put credentials in a `.env` file at project root — `python-dotenv` loads
 it automatically.
+
+### Getting DataForSEO credentials
+
+1. Sign up at https://app.dataforseo.com/register (pay-as-you-go; $50 minimum
+   top-up, $1 free credits to test — see the pricing notes in the project docs).
+2. Your API login + password are under **Dashboard → API Access** (the login is
+   your email; the password is the API password shown there, NOT your portal
+   password).
+3. Set `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` on the worker host (Railway →
+   Variables). Each research run uses Labs *Keyword Suggestions* (live) — roughly
+   1–2¢ per seed. Set a spending limit in the DataForSEO dashboard for safety.
 
 ### Getting Reddit credentials
 

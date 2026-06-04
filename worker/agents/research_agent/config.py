@@ -68,6 +68,13 @@ class Config:
     reddit_client_id:     str | None
     reddit_client_secret: str | None
     reddit_user_agent:    str | None
+    # DataForSEO (real keyword volume/competition) — optional. Source skips
+    # itself if login/password are missing.
+    dataforseo_login:         str | None
+    dataforseo_password:      str | None
+    dataforseo_location_code: int
+    dataforseo_language_code: str
+    dataforseo_limit:         int
 
     @classmethod
     def from_env(cls, seeds_override: list[str] | None = None) -> "Config":
@@ -82,7 +89,15 @@ class Config:
             reddit_client_id     = os.environ.get("REDDIT_CLIENT_ID"),
             reddit_client_secret = os.environ.get("REDDIT_CLIENT_SECRET"),
             reddit_user_agent    = os.environ.get("REDDIT_USER_AGENT", "dna-seo-research/0.1"),
+            dataforseo_login         = os.environ.get("DATAFORSEO_LOGIN"),
+            dataforseo_password      = os.environ.get("DATAFORSEO_PASSWORD"),
+            dataforseo_location_code = _env_int("DATAFORSEO_LOCATION_CODE", 2840),  # 2840 = United States
+            dataforseo_language_code = os.environ.get("DATAFORSEO_LANGUAGE_CODE", "en"),
+            dataforseo_limit         = _env_int("DATAFORSEO_LIMIT", 30),
         )
 
     def reddit_enabled(self) -> bool:
         return bool(self.reddit_client_id and self.reddit_client_secret and self.reddit_user_agent)
+
+    def dataforseo_enabled(self) -> bool:
+        return bool(self.dataforseo_login and self.dataforseo_password)

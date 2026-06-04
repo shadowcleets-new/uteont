@@ -63,6 +63,7 @@ SOURCE_COMPETITION = {
     "trends_top":    0.65,    # already popular
     "wikipedia":     0.55,    # established topic
     "reddit":        0.40,    # active discussion, varies
+    "dataforseo":    0.50,    # neutral default; real competition (metadata) overrides
 }
 
 # Volume multiplier — interest (0-100) * this = rough search_volume_estimate.
@@ -143,11 +144,35 @@ def merge_signals(signals: list[RawSignal]) -> dict[str, list[RawSignal]]:
 
 
 def score_keyword(signals: list[RawSignal]) -> tuple[int, float, str]:
-    """Return (volume_estimate, competition_score, source_label)."""
+    """Return (volume_estimate, competition_score, source_label).
+
+    REAL metrics win: when a source (DataForSEO) carried an absolute
+    `search_volume` / `competition` in metadata, those are used verbatim instead
+    of the interest-derived estimate / source-class heuristic. Falls back to the
+    free-tool heuristics when no real metrics are present.
+    """
     max_interest = max((s.interest for s in signals), default=0.0)
     sources = sorted({s.source for s in signals})
-    # Competition: average of per-source competitions for sources that surfaced this
-    if sources:
+
+    real_volumes: list[int] = []
+    real_comps: list[float] = []
+    for s in signals:
+        md = s.metadata or {}
+        sv = md.get("search_volume")
+        if isinstance(sv, (int, float)) and not isinstance(sv, bool):
+            real_volumes.append(int(sv))
+        cp = md.get("competition")
+        if isinstance(cp, (int, float)) and not isinstance(cp, bool):
+            real_comps.append(float(cp))
+
+    if real_volumes:
+        volume_est = max(real_volumes)
+    else:
+        volume_est = int(max_interest * VOLUME_MULTIPLIER)
+
+    if real_comps:
+        competition = sum(real_comps) / len(real_comps)
+    elif sources:
         per_source = [SOURCE_COMPETITION.get(s, 0.5) for s in sources]
         competition = sum(per_source) / len(per_source)
         # Multi-source bonus to competition (more sources = more established)
@@ -155,7 +180,7 @@ def score_keyword(signals: list[RawSignal]) -> tuple[int, float, str]:
             competition = min(1.0, competition + 0.05 * (len(sources) - 1))
     else:
         competition = 0.5
-    volume_est = int(max_interest * VOLUME_MULTIPLIER)
+
     return volume_est, round(competition, 3), "+".join(sources)
 
 

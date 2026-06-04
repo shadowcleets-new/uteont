@@ -19,6 +19,7 @@ import urllib.request
 from abc import ABC, abstractmethod
 from typing import Iterable
 
+from agents.research_agent import dataforseo
 from agents.research_agent.config import Config
 from agents.research_agent.models import RawSignal
 
@@ -180,5 +181,34 @@ class RedditSource(SourceBase):
         return signals
 
 
+# --- DataForSEO (real keyword volume/competition; paid, optional) --------
+
+class DataForSeoSource(SourceBase):
+    name = "dataforseo"
+
+    def __init__(self, cfg: Config) -> None:
+        self.cfg = cfg
+
+    def discover(self, seed: str) -> list[RawSignal]:
+        if not self.cfg.dataforseo_enabled():
+            log.info("dataforseo: skipped (no credentials)")
+            return []
+        try:
+            data = dataforseo.fetch(
+                self.cfg.dataforseo_login,
+                self.cfg.dataforseo_password,
+                seed,
+                location_code=self.cfg.dataforseo_location_code,
+                language_code=self.cfg.dataforseo_language_code,
+                limit=self.cfg.dataforseo_limit,
+            )
+        except Exception as e:
+            log.warning("dataforseo request failed for '%s': %s", seed, e)
+            return []
+        sigs = dataforseo.parse_keyword_suggestions(data, seed)
+        log.info("dataforseo: %d signals for seed '%s'", len(sigs), seed)
+        return sigs
+
+
 def all_sources(cfg: Config) -> list[SourceBase]:
-    return [TrendsSource(), WikipediaSource(), RedditSource(cfg)]
+    return [TrendsSource(), WikipediaSource(), RedditSource(cfg), DataForSeoSource(cfg)]
