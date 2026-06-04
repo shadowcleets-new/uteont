@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ne } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { conversations, messages, sites } from "@/lib/db/schema";
 import type { Conversation, Message, Site } from "@/lib/db/schema";
@@ -70,13 +70,16 @@ export async function getActiveTelegramConversation(): Promise<Conversation | nu
 
 export async function listConversations(
   limit = 50,
+  opts: { offset?: number; includeArchived?: boolean } = {},
 ): Promise<Conversation[]> {
   const db = getDb();
   return db
     .select()
     .from(conversations)
+    .where(opts.includeArchived ? undefined : ne(conversations.status, "archived"))
     .orderBy(desc(conversations.lastMessageAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(opts.offset ?? 0);
 }
 
 export async function updateConversation(

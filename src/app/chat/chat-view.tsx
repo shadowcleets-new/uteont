@@ -41,6 +41,51 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Conversation rail (local so rename/archive/load-more update without reload).
+  const [convos, setConvos] = useState<Conversation[]>(recent);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const saveRename = (id: number) => {
+    const title = editTitle.trim();
+    setEditingId(null);
+    if (!title) return;
+    setConvos((l) => l.map((c) => (c.id === id ? { ...c, title } : c)));
+    fetch(`/api/director/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }).catch(() => {});
+  };
+
+  const archive = (id: number) => {
+    if (!confirm("Archive this conversation? It will be hidden from the list (history is kept).")) return;
+    setConvos((l) => l.filter((c) => c.id !== id));
+    if (conversationId === id) startNew();
+    fetch(`/api/director/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "archived" }),
+    }).catch(() => {});
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/director/conversations?offset=${convos.length}&limit=20`);
+      const data = (await res.json()) as { conversations: Conversation[] };
+      setConvos((l) => {
+        const seen = new Set(l.map((c) => c.id));
+        return [...l, ...(data.conversations ?? []).filter((c) => !seen.has(c.id))];
+      });
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   // Sync chosenSiteId with activeSiteId once loaded (only if user hasn't chosen yet)
   useEffect(() => {
     if (chosenSiteId === null && activeSiteId !== null) {
@@ -118,6 +163,12 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
       const freshData = (await fresh.json()) as { conversation: Conversation; messages: Message[] };
       setHistory(freshData.messages);
       setConvSiteId(freshData.conversation.siteId ?? null);
+      // Surface a newly created conversation in the rail immediately.
+      setConvos((l) =>
+        l.some((c) => c.id === freshData.conversation.id)
+          ? l.map((c) => (c.id === freshData.conversation.id ? freshData.conversation : c))
+          : [freshData.conversation, ...l],
+      );
     } catch (e) {
       setError(String(e));
       // Roll back the optimistic message on error
@@ -155,30 +206,75 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
           <div className="px-4 pt-3 pb-1 text-[10px] font-bold tracking-wider text-[#9a988e]">
             RECENT
           </div>
-          {recent.length === 0 ? (
+          {convos.length === 0 ? (
             <div className="px-4 py-2 text-[11px] text-[#9a988e] italic font-serif">
               No conversations yet
             </div>
           ) : (
-            recent.map((c) => (
+            <>
+              {convos.map((c) => (
+                <div
+                  key={c.id}
+                  className={`group relative w-full px-4 py-2 text-[12px] hover:bg-[#ece9e0] transition-colors ${
+                    c.id === conversationId
+                      ? "bg-[#e8e6dc] border-l-[3px] border-[#d97757] pl-[13px]"
+                      : ""
+                  }`}
+                >
+                  {editingId === c.id ? (
+                    <input
+                      autoFocus
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveRename(c.id);
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                      onBlur={() => saveRename(c.id)}
+                      className="w-full rounded border border-[#cfccc1] px-1.5 py-0.5 text-[12px] focus:outline-none focus:border-[#d97757]"
+                    />
+                  ) : (
+                    <>
+                      <button onClick={() => setConversationId(c.id)} className="block w-full text-left">
+                        <div className="text-[#141413] font-medium truncate pr-12">
+                          {c.title ?? "Untitled"}
+                        </div>
+                        <div className="text-[10px] text-[#9a988e] mt-0.5">
+                          {c.status}
+                          {c.planApproved && " · approved"}
+                        </div>
+                      </button>
+                      <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-1.5">
+                        <button
+                          title="Rename"
+                          onClick={() => {
+                            setEditingId(c.id);
+                            setEditTitle(c.title ?? "");
+                          }}
+                          className="text-[12px] text-[#9a988e] hover:text-[#141413]"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          title="Archive"
+                          onClick={() => archive(c.id)}
+                          className="text-[12px] text-[#9a988e] hover:text-[#a33b2b]"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
               <button
-                key={c.id}
-                onClick={() => setConversationId(c.id)}
-                className={`w-full text-left px-4 py-2 text-[12px] hover:bg-[#ece9e0] transition-colors ${
-                  c.id === conversationId
-                    ? "bg-[#e8e6dc] border-l-[3px] border-[#d97757] pl-[13px]"
-                    : ""
-                }`}
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="w-full text-[11px] text-[#9a988e] hover:text-[#141413] py-2 disabled:opacity-60"
               >
-                <div className="text-[#141413] font-medium truncate">
-                  {c.title ?? "Untitled"}
-                </div>
-                <div className="text-[10px] text-[#9a988e] mt-0.5">
-                  {c.status}
-                  {c.planApproved && " · approved"}
-                </div>
+                {loadingMore ? "Loading…" : "Load more"}
               </button>
-            ))
+            </>
           )}
         </div>
       </aside>
