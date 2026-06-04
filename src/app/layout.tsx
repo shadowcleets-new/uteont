@@ -3,6 +3,7 @@ import { Poppins, Lora } from "next/font/google";
 import "./globals.css";
 import { auth } from "@/auth";
 import { Sidebar } from "@/components/sidebar";
+import { Analytics } from "@vercel/analytics/next";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -49,6 +50,7 @@ export default async function RootLayout({
         ) : (
           children
         )}
+        <Analytics />
       </body>
     </html>
   );
