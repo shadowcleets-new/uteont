@@ -46,6 +46,10 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  // Search across all chat history (title + message content).
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Conversation[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   const saveRename = (id: number) => {
     const title = editTitle.trim();
@@ -59,16 +63,37 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
     }).catch(() => {});
   };
 
-  const archive = (id: number) => {
-    if (!confirm("Archive this conversation? It will be hidden from the list (history is kept).")) return;
+  const remove = (id: number) => {
+    if (!confirm("Delete this conversation permanently? All of its messages will be removed — this cannot be undone.")) return;
     setConvos((l) => l.filter((c) => c.id !== id));
+    setResults((r) => (r ? r.filter((c) => c.id !== id) : r));
     if (conversationId === id) startNew();
-    fetch(`/api/director/conversations/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "archived" }),
-    }).catch(() => {});
+    fetch(`/api/director/conversations/${id}`, { method: "DELETE" }).catch(() => {});
   };
+
+  // Debounced full-history search. All state writes live in the timeout (async),
+  // so this never sets state synchronously during the effect.
+  useEffect(() => {
+    const q = query.trim();
+    const t = setTimeout(async () => {
+      if (!q) {
+        setResults(null);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/director/conversations?q=${encodeURIComponent(q)}`);
+        const data = (await res.json()) as { conversations: Conversation[] };
+        setResults(data.conversations ?? []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -186,6 +211,9 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
     setError(null);
   };
 
+  const isSearch = results !== null;
+  const railList = results ?? convos;
+
   return (
     <div className="flex h-screen">
       {/* Sidebar — recent conversations */}
@@ -202,17 +230,34 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
         >
           + New conversation
         </button>
+        <div className="mx-3 mt-2 relative">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search all chats…"
+            className="w-full rounded-md border border-[#cfccc1] bg-white pl-2.5 pr-7 py-1.5 text-[12px] focus:outline-none focus:border-[#d97757]"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              title="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[12px] text-[#9a988e] hover:text-[#141413]"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <div className="flex-1 overflow-y-auto mt-2">
           <div className="px-4 pt-3 pb-1 text-[10px] font-bold tracking-wider text-[#9a988e]">
-            RECENT
+            {isSearch ? (searching ? "SEARCHING…" : "RESULTS") : "RECENT"}
           </div>
-          {convos.length === 0 ? (
+          {railList.length === 0 ? (
             <div className="px-4 py-2 text-[11px] text-[#9a988e] italic font-serif">
-              No conversations yet
+              {isSearch ? (searching ? "Searching…" : "No matches") : "No conversations yet"}
             </div>
           ) : (
             <>
-              {convos.map((c) => (
+              {railList.map((c) => (
                 <div
                   key={c.id}
                   className={`group relative w-full px-4 py-2 text-[12px] hover:bg-[#ece9e0] transition-colors ${
@@ -256,8 +301,8 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
                           ✎
                         </button>
                         <button
-                          title="Archive"
-                          onClick={() => archive(c.id)}
+                          title="Delete permanently"
+                          onClick={() => remove(c.id)}
                           className="text-[12px] text-[#9a988e] hover:text-[#a33b2b]"
                         >
                           ✕
@@ -267,13 +312,15 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
                   )}
                 </div>
               ))}
-              <button
-                onClick={loadMore}
-                disabled={loadingMore}
-                className="w-full text-[11px] text-[#9a988e] hover:text-[#141413] py-2 disabled:opacity-60"
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
+              {!isSearch && (
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="w-full text-[11px] text-[#9a988e] hover:text-[#141413] py-2 disabled:opacity-60"
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              )}
             </>
           )}
         </div>

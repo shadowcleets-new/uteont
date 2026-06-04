@@ -13,11 +13,20 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createConversation, listConversations } from "@/lib/services/conversations";
+import { createConversation, listConversations, searchConversations } from "@/lib/services/conversations";
 
-/** GET /api/director/conversations?offset=&limit= — paginated recent list (load-more). */
+/**
+ * GET /api/director/conversations
+ *   ?q=<text>           — full-history search (title + message content)
+ *   ?offset=&limit=     — paginated recent list (load-more)
+ */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  const q = (searchParams.get("q") ?? "").trim();
+  if (q) {
+    const conversations = await searchConversations(q, 30);
+    return NextResponse.json({ conversations });
+  }
   const offset = Math.max(0, Number(searchParams.get("offset") ?? 0) || 0);
   const limit = Math.min(50, Math.max(1, Number(searchParams.get("limit") ?? 20) || 20));
   const conversations = await listConversations(limit, { offset });

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, ne, or } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { conversations, messages, sites } from "@/lib/db/schema";
 import type { Conversation, Message, Site } from "@/lib/db/schema";
@@ -95,6 +95,49 @@ export async function updateConversation(
     .update(conversations)
     .set({ ...patch, updatedAt: new Date() })
     .where(eq(conversations.id, id));
+}
+
+/** Permanently delete a conversation and all of its messages. */
+export async function deleteConversation(id: number): Promise<void> {
+  const db = getDb();
+  await db.delete(messages).where(eq(messages.conversationId, id)); // children first (FK)
+  await db.delete(conversations).where(eq(conversations.id, id));
+}
+
+/**
+ * Full-history search: conversations whose title OR any message content matches
+ * `query` (case-insensitive substring), newest first. Excludes archived.
+ */
+export async function searchConversations(query: string, limit = 30): Promise<Conversation[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const db = getDb();
+  // Escape LIKE wildcards so a literal % or _ in the query isn't treated as one.
+  const pattern = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+
+  // Conversation ids that have a matching message.
+  let msgConvIds: number[] = [];
+  try {
+    const rows = await db
+      .selectDistinct({ cid: messages.conversationId })
+      .from(messages)
+      .where(ilike(messages.content, pattern))
+      .limit(300);
+    msgConvIds = rows.map((r) => r.cid);
+  } catch {
+    msgConvIds = [];
+  }
+
+  const matchTitleOrMessage = msgConvIds.length
+    ? or(ilike(conversations.title, pattern), inArray(conversations.id, msgConvIds))
+    : ilike(conversations.title, pattern);
+
+  return db
+    .select()
+    .from(conversations)
+    .where(and(ne(conversations.status, "archived"), matchTitleOrMessage))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(limit);
 }
 
 export interface AppendMessageInput {

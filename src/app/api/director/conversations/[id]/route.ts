@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getConversation, getMessages, updateConversation } from "@/lib/services/conversations";
+import { getConversation, getMessages, updateConversation, deleteConversation } from "@/lib/services/conversations";
 
 export async function GET(
   _req: NextRequest,
@@ -45,4 +45,17 @@ export async function PATCH(
   }
   await updateConversation(conversationId, patch);
   return NextResponse.json({ ok: true, ...patch });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const conversationId = parseInt(id, 10);
+  if (!Number.isFinite(conversationId)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+  await deleteConversation(conversationId);
+  return NextResponse.json({ ok: true });
 }
