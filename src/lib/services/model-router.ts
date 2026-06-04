@@ -7,7 +7,7 @@
  * cheaper/faster model via env without touching call sites.
  */
 
-export type ModelTask = "director" | "director-report";
+export type ModelTask = "director" | "director-report" | "summarize";
 
 const DEFAULT_MODEL = "gemini-flash-latest";
 
@@ -16,6 +16,9 @@ export function pickModel(task: ModelTask): string {
     case "director":
     case "director-report":
       return process.env.GEMINI_MODEL_DIRECTOR?.trim() || DEFAULT_MODEL;
+    case "summarize":
+      // Conversation compaction — always the cheapest Flash tier.
+      return process.env.GEMINI_MODEL_SUMMARIZE?.trim() || DEFAULT_MODEL;
     default:
       return DEFAULT_MODEL;
   }

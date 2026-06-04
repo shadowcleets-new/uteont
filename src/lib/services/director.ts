@@ -25,6 +25,7 @@ import {
 } from "./conversations";
 import { dispatchAgentJob } from "./jobs";
 import { fenceUntrusted } from "./untrusted";
+import { maybeCompact } from "./chat-summary";
 import type { Conversation, Message, Site } from "@/lib/db/schema";
 
 // --- system prompt --------------------------------------------------------
@@ -413,6 +414,10 @@ export async function runDirectorTurn(
       title: input.newUserMessage.slice(0, 60),
     });
   }
+
+  // Keep per-turn token cost flat: once the verbatim window overflows, fold the
+  // oldest messages into the rolling summary (best-effort, never blocks).
+  await maybeCompact(input.conversation.id).catch(() => {});
 
   return { message: assistantMsg, response: parsed };
 }
