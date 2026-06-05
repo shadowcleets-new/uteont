@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import type { Keyword } from "@/lib/db/schema";
 
-type SortKey = "priority" | "volume-desc" | "volume-asc" | "comp-asc" | "comp-desc" | "recent";
+type SortField = "priority" | "keyword" | "volume" | "comp" | "source" | "status" | "found";
+type SortDir = "asc" | "desc";
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -14,22 +15,68 @@ const STATUS_OPTIONS = [
   { value: "published", label: "Published" },
 ];
 
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "priority", label: "Sort: Priority" },
-  { value: "volume-desc", label: "Sort: Volume ↓" },
-  { value: "volume-asc", label: "Sort: Volume ↑" },
-  { value: "comp-asc", label: "Sort: Easiest (comp ↑)" },
-  { value: "comp-desc", label: "Sort: Hardest (comp ↓)" },
-  { value: "recent", label: "Sort: Newest" },
+const SORT_FIELDS: { value: SortField; label: string }[] = [
+  { value: "priority", label: "Priority" },
+  { value: "keyword", label: "Keyword" },
+  { value: "volume", label: "Volume" },
+  { value: "comp", label: "Competition" },
+  { value: "source", label: "Source" },
+  { value: "status", label: "Status" },
+  { value: "found", label: "Found" },
 ];
+
+// Sensible default direction when you first sort by a field.
+const DEFAULT_DIR: Record<SortField, SortDir> = {
+  priority: "asc",
+  keyword: "asc",
+  volume: "desc",
+  comp: "asc",
+  source: "asc",
+  status: "asc",
+  found: "desc",
+};
 
 const statusColor = (s: string) =>
   s === "approved" ? "#788c5d" : s === "shelved" ? "#a33b2b" : s === "published" ? "#6a9bcc" : "#6b6a64";
 
-const fmtDate = (d: unknown): string => {
+const ms = (d: unknown): number => {
   const t = new Date(d as string).getTime();
-  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "—";
+  return Number.isFinite(t) ? t : 0;
 };
+
+const fmtDate = (d: unknown): string => {
+  const t = ms(d);
+  return t ? new Date(t).toISOString().slice(0, 10) : "—";
+};
+
+/** Sortable table header cell — click to sort, click again to flip direction. */
+function SortTh({
+  field,
+  label,
+  extra,
+  sortField,
+  sortDir,
+  onSort,
+}: {
+  field: SortField;
+  label: string;
+  extra?: string;
+  sortField: SortField;
+  sortDir: SortDir;
+  onSort: (f: SortField) => void;
+}) {
+  const active = sortField === field;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      title={`Sort by ${label}`}
+      className={`px-3 py-2.5 cursor-pointer select-none hover:text-[#141413] ${active ? "text-[#141413]" : ""} ${extra ?? ""}`}
+    >
+      {label}
+      <span className={active ? "text-[#d97757]" : "opacity-25"}>{active ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕"}</span>
+    </th>
+  );
+}
 
 export function KeywordsManager({ initial }: { initial: Keyword[] }) {
   const [rows, setRows] = useState<Keyword[]>(initial);
@@ -43,7 +90,8 @@ export function KeywordsManager({ initial }: { initial: Keyword[] }) {
   const [minVol, setMinVol] = useState("");
   const [maxComp, setMaxComp] = useState(""); // 0-100 (%)
   const [source, setSource] = useState("");
-  const [sort, setSort] = useState<SortKey>("priority");
+  const [sortField, setSortField] = useState<SortField>("priority");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const sources = useMemo(() => {
     const set = new Set<string>();
@@ -67,16 +115,31 @@ export function KeywordsManager({ initial }: { initial: Keyword[] }) {
       if (src && !(k.source || "").toLowerCase().includes(src)) return false;
       return true;
     });
-    const cmp: Record<SortKey, (a: Keyword, b: Keyword) => number> = {
-      priority: (a, b) => a.priorityRank - b.priorityRank,
-      "volume-desc": (a, b) => b.searchVolumeEstimate - a.searchVolumeEstimate,
-      "volume-asc": (a, b) => a.searchVolumeEstimate - b.searchVolumeEstimate,
-      "comp-asc": (a, b) => a.competitionScore - b.competitionScore,
-      "comp-desc": (a, b) => b.competitionScore - a.competitionScore,
-      recent: (a, b) => b.id - a.id,
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: Keyword, b: Keyword): number => {
+      let r = 0;
+      switch (sortField) {
+        case "priority": r = a.priorityRank - b.priorityRank; break;
+        case "keyword": r = a.keyword.localeCompare(b.keyword); break;
+        case "volume": r = a.searchVolumeEstimate - b.searchVolumeEstimate; break;
+        case "comp": r = a.competitionScore - b.competitionScore; break;
+        case "source": r = (a.source || "").localeCompare(b.source || ""); break;
+        case "status": r = a.status.localeCompare(b.status); break;
+        case "found": r = ms(a.createdAt) - ms(b.createdAt); break;
+      }
+      return r * dir || a.id - b.id; // stable tiebreak
     };
-    return [...out].sort(cmp[sort]);
-  }, [rows, text, status, minVol, maxComp, source, sort]);
+    return [...out].sort(cmp);
+  }, [rows, text, status, minVol, maxComp, source, sortField, sortDir]);
+
+  // Click a column header: same field → flip direction; new field → its default.
+  const sortBy = (field: SortField) => {
+    if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortField(field);
+      setSortDir(DEFAULT_DIR[field]);
+    }
+  };
 
   const allVisibleSelected = filtered.length > 0 && filtered.every((k) => selected.has(k.id));
 
@@ -146,7 +209,7 @@ export function KeywordsManager({ initial }: { initial: Keyword[] }) {
   };
 
   const inputCls = "rounded border border-[#cfccc1] bg-white px-2 py-1 text-[12px] focus:outline-none focus:border-[#d97757]";
-  const filtersOn = text || status || minVol || maxComp || source || sort !== "priority";
+  const filtersOn = text || status || minVol || maxComp || source || sortField !== "priority" || sortDir !== "asc";
 
   return (
     <div>
@@ -162,12 +225,25 @@ export function KeywordsManager({ initial }: { initial: Keyword[] }) {
           <option value="">All sources</option>
           {sources.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={inputCls}>
-          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        <div className="flex items-center">
+          <select
+            value={sortField}
+            onChange={(e) => { const f = e.target.value as SortField; setSortField(f); setSortDir(DEFAULT_DIR[f]); }}
+            className={`${inputCls} rounded-r-none border-r-0`}
+          >
+            {SORT_FIELDS.map((o) => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
+          </select>
+          <button
+            onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+            title={`Direction: ${sortDir === "asc" ? "ascending" : "descending"}`}
+            className={`${inputCls} rounded-l-none px-2.5`}
+          >
+            {sortDir === "asc" ? "↑" : "↓"}
+          </button>
+        </div>
         {filtersOn && (
           <button
-            onClick={() => { setText(""); setStatus(""); setMinVol(""); setMaxComp(""); setSource(""); setSort("priority"); }}
+            onClick={() => { setText(""); setStatus(""); setMinVol(""); setMaxComp(""); setSource(""); setSortField("priority"); setSortDir("asc"); }}
             className="text-[11px] text-[#9a988e] hover:text-[#141413] underline"
           >
             Reset
@@ -199,13 +275,17 @@ export function KeywordsManager({ initial }: { initial: Keyword[] }) {
             <thead className="bg-[#faf9f5]">
               <tr className="text-[10px] font-bold tracking-wider text-[#9a988e] text-left">
                 <th className="px-3 py-2.5 w-8"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} aria-label="Select all" /></th>
-                <th className="px-3 py-2.5 w-10">#</th>
-                <th className="px-3 py-2.5">KEYWORD</th>
-                <th className="px-3 py-2.5">VOLUME</th>
-                <th className="px-3 py-2.5">COMP</th>
-                <th className="px-3 py-2.5">SOURCE</th>
-                <th className="px-3 py-2.5">STATUS</th>
-                <th className="px-3 py-2.5">FOUND</th>
+                {([
+                  { field: "priority" as const, label: "#", extra: "w-10" },
+                  { field: "keyword" as const, label: "KEYWORD" },
+                  { field: "volume" as const, label: "VOLUME" },
+                  { field: "comp" as const, label: "COMP" },
+                  { field: "source" as const, label: "SOURCE" },
+                  { field: "status" as const, label: "STATUS" },
+                  { field: "found" as const, label: "FOUND" },
+                ]).map((h) => (
+                  <SortTh key={h.field} field={h.field} label={h.label} extra={h.extra} sortField={sortField} sortDir={sortDir} onSort={sortBy} />
+                ))}
                 <th className="px-3 py-2.5 w-28">ACTIONS</th>
               </tr>
             </thead>
