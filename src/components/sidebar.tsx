@@ -16,6 +16,7 @@ import {
   Inbox,
   Target,
   Workflow,
+  Trophy,
 } from "lucide-react";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ const SECTIONS: NavSection[] = [
     title: "DATA",
     items: [
       { label: "Keywords", href: "/keywords", icon: Hash },
+      { label: "Competitors", href: "/competitors", icon: Trophy },
       { label: "Runs", href: "/runs", icon: Activity },
       { label: "Export", href: "/export", icon: Download },
     ],
