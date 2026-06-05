@@ -13,6 +13,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Bot,
+  Inbox,
+  Target,
 } from "lucide-react";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
@@ -40,6 +42,8 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/", icon: Home },
       { label: "Director (Chat)", href: "/chat", icon: MessageSquare },
+      { label: "Approvals", href: "/approvals", icon: Inbox },
+      { label: "Targets", href: "/targets/new", icon: Target },
     ],
   },
   {

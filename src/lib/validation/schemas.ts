@@ -56,7 +56,7 @@ export const UpdateArticleRequest = z.object({
   metaTitle:       z.string().max(160).optional(),
   metaDescription: z.string().max(500).optional(),
   status: z.enum([
-    "draft", "qa-passed", "approved", "staged", "published", "rejected",
+    "draft", "qa-passed", "approved", "staged", "published", "rejected", "shelved",
   ]).optional(),
 });
 
