@@ -277,7 +277,8 @@ export async function runDirectorTurn(
       traceId,
       ...(cachedContent ? { cachedContent } : { systemInstruction: sysPrompt }),
       temperature: 0.4,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096,
+      thinkingBudget: 0, // structured intent call — no reasoning budget, so JSON isn't truncated
       responseSchema: {
         type: "object",
         required: ["intent", "text"],

@@ -29,6 +29,12 @@ export interface GeminiOptions {
   responseMimeType?: "application/json" | "text/plain";
   responseSchema?: Record<string, unknown>;
   /**
+   * Gemini 2.5+ thinking budget (output tokens reserved for internal reasoning).
+   * 0 disables thinking — important for structured/JSON calls so the whole
+   * output budget goes to the response and the JSON isn't truncated mid-stream.
+   */
+  thinkingBudget?: number;
+  /**
    * Explicit Gemini cachedContents handle (e.g. "cachedContents/abc"). When
    * set, the cached system instruction is reused and `systemInstruction` is
    * ignored (it already lives in the cache).
@@ -98,6 +104,7 @@ export async function complete(
     generationConfig.maxOutputTokens = opts.maxOutputTokens;
   if (opts.responseMimeType) generationConfig.responseMimeType = opts.responseMimeType;
   if (opts.responseSchema) generationConfig.responseSchema = opts.responseSchema;
+  if (opts.thinkingBudget !== undefined) generationConfig.thinkingConfig = { thinkingBudget: opts.thinkingBudget };
   if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
 
   const startedAt = Date.now();
@@ -188,21 +195,36 @@ export async function completeJson<T = unknown>(
   prompt: string,
   opts: GeminiOptions = {},
 ): Promise<{ data: T; raw: string; usage?: GeminiResult["usage"] }> {
-  const result = await complete(prompt, {
-    ...opts,
-    responseMimeType: "application/json",
-  });
-  let stripped = result.text.trim();
-  // Strip code fences in case the model added them despite responseMimeType
-  if (stripped.startsWith("```")) {
-    stripped = stripped.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "");
+  const strip = (s: string) => {
+    let out = s.trim();
+    if (out.startsWith("```")) out = out.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "");
+    return out;
+  };
+
+  let result = await complete(prompt, { ...opts, responseMimeType: "application/json" });
+  let stripped = strip(result.text);
+
+  // Self-heal truncation: a thinking model can spend the output budget on
+  // internal reasoning and cut the JSON off mid-stream (finishReason
+  // MAX_TOKENS). Retry once with thinking disabled + a larger budget so the
+  // full JSON comes back.
+  if (result.finishReason === "MAX_TOKENS") {
+    result = await complete(prompt, {
+      ...opts,
+      responseMimeType: "application/json",
+      thinkingBudget: 0,
+      maxOutputTokens: Math.max((opts.maxOutputTokens ?? 2048) * 2, 8192),
+    });
+    stripped = strip(result.text);
   }
+
   let data: T;
   try {
     data = JSON.parse(stripped) as T;
   } catch (e) {
+    const why = result.finishReason === "MAX_TOKENS" ? " (response truncated — hit the token limit)" : "";
     throw new GeminiError(
-      `Gemini response wasn't valid JSON. Got: ${stripped.slice(0, 200)}`,
+      `Gemini response wasn't valid JSON${why}. Got: ${stripped.slice(0, 200)}`,
       e,
     );
   }
