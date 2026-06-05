@@ -1,6 +1,6 @@
-import { eq, like } from "drizzle-orm";
+import { count, eq, like, inArray, not, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { runs, type Run } from "@/lib/db/schema";
+import { runs, articles, ideas, cycles, type Run } from "@/lib/db/schema";
 
 export interface AgentStats {
   totalRuns: number;
@@ -92,6 +92,106 @@ export async function getAllAgentStats(): Promise<Record<string, AgentStats>> {
   } catch (e) {
     console.warn("[stats.getAllAgentStats] DB error:", e);
     return {};
+  }
+}
+
+export interface DashboardStats {
+  activeProjects: number;
+  publishedArticles: number;
+  totalArticles: number;
+  efficiencyRatio: number; // published / total, 0 when none generated
+  pendingApprovals: number; // ideas in 'proposed' + articles in 'qa-passed'
+  activeRuns: number;       // runs currently 'running'
+  // Real quota plumbing lands in Milestone 9; placeholder for tier-1 UI.
+  apiQuotaUsedPct: number;
+}
+
+function emptyDashboard(): DashboardStats {
+  return {
+    activeProjects: 0,
+    publishedArticles: 0,
+    totalArticles: 0,
+    efficiencyRatio: 0,
+    pendingApprovals: 0,
+    activeRuns: 0,
+    apiQuotaUsedPct: 0,
+  };
+}
+
+/**
+ * One round-trip per metric — kept flat so a slow link can fail fast and
+ * we still render the dashboard with zeros instead of a blank page.
+ */
+export async function getDashboardStats(): Promise<DashboardStats> {
+  try {
+    const db = getDb();
+    const [
+      cyclesActive,
+      articlesPublished,
+      articlesTotal,
+      ideasProposed,
+      articlesPendingApproval,
+      runsActive,
+    ] = await Promise.all([
+      db.select({ n: count() }).from(cycles)
+        .where(not(inArray(cycles.status, ["published", "archived"]))),
+      db.select({ n: count() }).from(articles)
+        .where(eq(articles.status, "published")),
+      db.select({ n: count() }).from(articles),
+      db.select({ n: count() }).from(ideas)
+        .where(eq(ideas.status, "proposed")),
+      db.select({ n: count() }).from(articles)
+        .where(eq(articles.status, "qa-passed")),
+      db.select({ n: count() }).from(runs)
+        .where(eq(runs.status, "running")),
+    ]);
+
+    const published = Number(articlesPublished[0]?.n ?? 0);
+    const total = Number(articlesTotal[0]?.n ?? 0);
+
+    return {
+      activeProjects: Number(cyclesActive[0]?.n ?? 0),
+      publishedArticles: published,
+      totalArticles: total,
+      efficiencyRatio: total > 0 ? published / total : 0,
+      pendingApprovals:
+        Number(ideasProposed[0]?.n ?? 0) +
+        Number(articlesPendingApproval[0]?.n ?? 0),
+      activeRuns: Number(runsActive[0]?.n ?? 0),
+      apiQuotaUsedPct: 0,
+    };
+  } catch (e) {
+    console.warn("[stats.getDashboardStats] DB error:", e);
+    return emptyDashboard();
+  }
+}
+
+/**
+ * Per-day run counts for sparklines on the dashboard KPI cards. Returns
+ * the last `days` buckets (oldest first) so the consumer can render a
+ * polyline directly. Zero days when the DB is unreachable.
+ */
+export async function getRunsByDay(
+  days = 14,
+): Promise<Array<{ day: string; total: number }>> {
+  try {
+    const db = getDb();
+    const rows = await db.execute<{ day: string; total: number }>(sql`
+      SELECT
+        to_char(date_trunc('day', started_at), 'YYYY-MM-DD') AS day,
+        count(*)::int AS total
+      FROM ${runs}
+      WHERE started_at > now() - (${days}::int * interval '1 day')
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `);
+    // neon-http returns { rows } shape via .execute() but drizzle's typing
+    // varies; normalize:
+    const list = (Array.isArray(rows) ? rows : (rows as unknown as { rows: Array<{ day: string; total: number }> }).rows) ?? [];
+    return list.map((r) => ({ day: r.day, total: Number(r.total) }));
+  } catch (e) {
+    console.warn("[stats.getRunsByDay] DB error:", e);
+    return [];
   }
 }
 
