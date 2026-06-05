@@ -15,6 +15,7 @@ import {
   Bot,
   Inbox,
   Target,
+  Workflow,
 } from "lucide-react";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/", icon: Home },
       { label: "Director (Chat)", href: "/chat", icon: MessageSquare },
+      { label: "Pipeline", href: "/pipeline", icon: Workflow },
       { label: "Approvals", href: "/approvals", icon: Inbox },
       { label: "Targets", href: "/targets/new", icon: Target },
     ],
