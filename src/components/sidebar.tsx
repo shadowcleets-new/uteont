@@ -17,6 +17,7 @@ import {
   Target,
   Workflow,
   Trophy,
+  LineChart as LineChartIcon,
 } from "lucide-react";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: "Keywords", href: "/keywords", icon: Hash },
       { label: "Competitors", href: "/competitors", icon: Trophy },
+      { label: "Analytics", href: "/analytics", icon: LineChartIcon },
       { label: "Runs", href: "/runs", icon: Activity },
       { label: "Export", href: "/export", icon: Download },
     ],
