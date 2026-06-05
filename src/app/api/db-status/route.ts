@@ -21,14 +21,19 @@ export async function GET() {
     "approvals",
     "articles",
     "auth_config",
+    "conversations",
     "cycles",
     "ideas",
     "jobs",
+    "keyword_exclusions",
     "keywords",
     "kv_settings",
     "login_attempts",
+    "messages",
     "notifications",
     "runs",
+    "site_integrations",
+    "sites",
   ];
 
   try {

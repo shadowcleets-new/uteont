@@ -24,12 +24,76 @@ import {
   real,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+/**
+ * Site = a content target (one domain / one brand). Every cycle, job,
+ * run, keyword, article, and approval is scoped to a site so the
+ * Director, the worker, and the dashboards can render per-site context.
+ *
+ * Encryption of integration config is part of the larger
+ * site-context-foundation spec; this minimal seed stores config as JSONB
+ * so Milestone 2 (cascades + dedup) can land without blocking on the
+ * AES-256-GCM helper. Foundation work will migrate this column shape.
+ */
+export const sites = pgTable(
+  "sites",
+  {
+    id:                serial("id").primaryKey(),
+    key:               text("key").notNull(),
+    name:              text("name").notNull(),
+    domain:            text("domain").notNull(),
+    locale:            text("locale").notNull().default("en-US"),
+    niche:             text("niche"),
+    audience:          text("audience"),
+    voiceGuide:        text("voice_guide"),
+    contentPillars:    jsonb("content_pillars").$type<string[]>().notNull().default([]),
+    bannedPhrases:     jsonb("banned_phrases").$type<string[]>().notNull().default([]),
+    defaultCategories: jsonb("default_categories").$type<string[]>().notNull().default([]),
+    cmsPlatform:       text("cms_platform").notNull().default("none"),
+    sitemapUrl:        text("sitemap_url"),
+    gscPropertyId:     text("gsc_property_id"),
+    ga4PropertyId:     text("ga4_property_id"),
+    status:            text("status").notNull().default("active"),
+      // active | archived
+    createdAt:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:         timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byKeyUnique: uniqueIndex("sites_key_unique_idx").on(t.key),
+    byStatus:    index("sites_status_idx").on(t.status),
+  }),
+);
+
+export const siteIntegrations = pgTable(
+  "site_integrations",
+  {
+    id:              serial("id").primaryKey(),
+    siteId:          integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    kind:            text("kind").notNull(),
+      // wordpress | vercel | shopify | webflow | ghost | gsc | ga4 | slack
+    label:           text("label"),
+    config:          jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    status:          text("status").notNull().default("unverified"),
+      // unverified | active | error
+    lastVerifiedAt:  timestamp("last_verified_at", { withTimezone: true }),
+    lastError:       text("last_error"),
+    createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite:     index("site_integrations_site_idx").on(t.siteId),
+    uqSiteKind: uniqueIndex("site_integrations_site_kind_unique_idx").on(t.siteId, t.kind),
+    byStatus:   index("site_integrations_status_idx").on(t.status),
+  }),
+);
 
 export const cycles = pgTable(
   "cycles",
   {
     id:         serial("id").primaryKey(),
+    siteId:     integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
     goal:       text("goal").notNull(),
     seedTerms:  jsonb("seed_terms").$type<string[]>().notNull().default([]),
     status:     text("status").notNull().default("researching"),
@@ -39,6 +103,7 @@ export const cycles = pgTable(
   },
   (t) => ({
     byStatus: index("cycles_status_idx").on(t.status),
+    bySite:   index("cycles_site_idx").on(t.siteId),
   }),
 );
 
@@ -46,10 +111,11 @@ export const runs = pgTable(
   "runs",
   {
     id:          serial("id").primaryKey(),
+    siteId:      integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
     subjectKey:  text("subject_key").notNull(),
     category:    text("category").notNull(),
     action:      text("action").notNull(),
-    cycleId:     integer("cycle_id").references(() => cycles.id),
+    cycleId:     integer("cycle_id").references(() => cycles.id, { onDelete: "cascade" }),
     jobId:       integer("job_id"),
     startedAt:   timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt:  timestamp("finished_at", { withTimezone: true }),
@@ -61,6 +127,7 @@ export const runs = pgTable(
     bySubject: index("runs_subject_idx").on(t.subjectKey),
     byStarted: index("runs_started_idx").on(t.startedAt.desc()),
     byCycle:   index("runs_cycle_idx").on(t.cycleId),
+    bySite:    index("runs_site_idx").on(t.siteId),
   }),
 );
 
@@ -69,7 +136,8 @@ export const jobs = pgTable(
   {
     id:           serial("id").primaryKey(),
     agentKey:     text("agent_key").notNull(),
-    cycleId:      integer("cycle_id").references(() => cycles.id),
+    siteId:       integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    cycleId:      integer("cycle_id").references(() => cycles.id, { onDelete: "cascade" }),
     payload:      jsonb("payload").notNull(),
     status:       text("status").notNull().default("queued"),
       // queued | claimed | done | failed
@@ -87,6 +155,7 @@ export const jobs = pgTable(
     byStatus: index("jobs_status_idx").on(t.status),
     byAgent:  index("jobs_agent_idx").on(t.agentKey),
     byCycle:  index("jobs_cycle_idx").on(t.cycleId),
+    bySite:   index("jobs_site_idx").on(t.siteId),
   }),
 );
 
@@ -94,7 +163,8 @@ export const keywords = pgTable(
   "keywords",
   {
     id:                    serial("id").primaryKey(),
-    cycleId:               integer("cycle_id").references(() => cycles.id),
+    siteId:                integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    cycleId:               integer("cycle_id").references(() => cycles.id, { onDelete: "cascade" }),
     keyword:               text("keyword").notNull(),
     searchVolumeEstimate:  integer("search_volume_estimate").notNull(),
     competitionScore:      real("competition_score").notNull(),
@@ -111,6 +181,7 @@ export const keywords = pgTable(
     byCycle:    index("keywords_cycle_idx").on(t.cycleId),
     byStatus:   index("keywords_status_idx").on(t.status),
     byPriority: index("keywords_priority_idx").on(t.priorityRank),
+    bySite:     index("keywords_site_idx").on(t.siteId),
   }),
 );
 
@@ -118,8 +189,9 @@ export const ideas = pgTable(
   "ideas",
   {
     id:           serial("id").primaryKey(),
-    keywordId:    integer("keyword_id").references(() => keywords.id),
-    cycleId:      integer("cycle_id").references(() => cycles.id),
+    siteId:       integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    keywordId:    integer("keyword_id").references(() => keywords.id, { onDelete: "cascade" }),
+    cycleId:      integer("cycle_id").references(() => cycles.id, { onDelete: "cascade" }),
     angle:        text("angle").notNull(),
     brief:        text("brief").notNull(),
     intent:       text("intent"),  // informational | transactional | navigational | commercial
@@ -134,6 +206,7 @@ export const ideas = pgTable(
     byCycle:   index("ideas_cycle_idx").on(t.cycleId),
     byKeyword: index("ideas_keyword_idx").on(t.keywordId),
     byStatus:  index("ideas_status_idx").on(t.status),
+    bySite:    index("ideas_site_idx").on(t.siteId),
   }),
 );
 
@@ -141,8 +214,9 @@ export const articles = pgTable(
   "articles",
   {
     id:               serial("id").primaryKey(),
-    ideaId:           integer("idea_id").references(() => ideas.id),
-    cycleId:          integer("cycle_id").references(() => cycles.id),
+    siteId:           integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    ideaId:           integer("idea_id").references(() => ideas.id, { onDelete: "cascade" }),
+    cycleId:          integer("cycle_id").references(() => cycles.id, { onDelete: "cascade" }),
     title:            text("title").notNull(),
     slug:             text("slug").notNull(),
     body:             text("body").notNull(),
@@ -164,6 +238,7 @@ export const articles = pgTable(
     byCycle:   index("articles_cycle_idx").on(t.cycleId),
     byStatus:  index("articles_status_idx").on(t.status),
     bySlug:    index("articles_slug_idx").on(t.slug),
+    bySite:    index("articles_site_idx").on(t.siteId),
   }),
 );
 
@@ -171,6 +246,7 @@ export const approvals = pgTable(
   "approvals",
   {
     id:           serial("id").primaryKey(),
+    siteId:       integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
     gate:         text("gate").notNull(),
       // A: idea-selection | B: content | C: production | D: major-changes | E: outreach
     targetType:   text("target_type").notNull(), // 'idea' | 'article' | 'change'
@@ -184,6 +260,7 @@ export const approvals = pgTable(
   (t) => ({
     byGate:   index("approvals_gate_idx").on(t.gate),
     byTarget: index("approvals_target_idx").on(t.targetType, t.targetId),
+    bySite:   index("approvals_site_idx").on(t.siteId),
   }),
 );
 
@@ -270,6 +347,7 @@ export const conversations = pgTable(
   "conversations",
   {
     id:            serial("id").primaryKey(),
+    siteId:        integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
     title:         text("title"),
     goal:          text("goal"),          // the parsed end-goal from the user's initial message
     status:        text("status").notNull().default("active"),  // active | paused | completed | archived
@@ -282,6 +360,29 @@ export const conversations = pgTable(
   (t) => ({
     byStatus:        index("conversations_status_idx").on(t.status),
     byLastMessage:   index("conversations_last_message_idx").on(t.lastMessageAt),
+    bySite:          index("conversations_site_idx").on(t.siteId),
+  }),
+);
+
+/**
+ * Persisted user rejection signal for Milestone 10. When the user shelves
+ * a keyword, rejects an idea, or returns an article with a refine note,
+ * the head phrase is captured here so the Research + Ideation prompt
+ * builders can inject a negative-constraint block on the next run.
+ */
+export const keywordExclusions = pgTable(
+  "keyword_exclusions",
+  {
+    id:        serial("id").primaryKey(),
+    siteId:    integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    phrase:    text("phrase").notNull(),
+    reason:    text("reason"),
+    source:    text("source").notNull().default("keyword"),  // keyword | idea | article
+    sourceId:  integer("source_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite: index("keyword_exclusions_site_idx").on(t.siteId),
   }),
 );
 
@@ -321,3 +422,6 @@ export type AuthConfig = typeof authConfig.$inferSelect;
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type Site = typeof sites.$inferSelect;
+export type SiteIntegration = typeof siteIntegrations.$inferSelect;
+export type KeywordExclusion = typeof keywordExclusions.$inferSelect;
