@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -64,6 +63,10 @@ export function ChatInput({
   const [active, setActive] = useState(0);
   const suggestions = matchedCommands(value);
   const showSuggestions = suggestions.length > 0;
+  // Clamp the highlight to the current list during render instead of
+  // resetting it via an effect — when the suggestion list shrinks (or the
+  // user keeps typing), the index folds back to the head automatically.
+  const activeIndex = active < suggestions.length ? active : 0;
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -71,10 +74,6 @@ export function ChatInput({
     el.style.height = "auto";
     el.style.height = `${Math.min(MAX_HEIGHT, el.scrollHeight)}px`;
   }, [value]);
-
-  useEffect(() => {
-    setActive(0);
-  }, [suggestions.length]);
 
   function applyCommand(cmd: SlashCommand) {
     onChange(`${cmd.command} `);
@@ -85,17 +84,17 @@ export function ChatInput({
     if (showSuggestions) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setActive((i) => (i + 1) % suggestions.length);
+        setActive((activeIndex + 1) % suggestions.length);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setActive((i) => (i - 1 + suggestions.length) % suggestions.length);
+        setActive((activeIndex - 1 + suggestions.length) % suggestions.length);
         return;
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        applyCommand(suggestions[active]);
+        applyCommand(suggestions[activeIndex]);
         return;
       }
       if (e.key === "Escape") {
@@ -107,7 +106,7 @@ export function ChatInput({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (showSuggestions) {
-        applyCommand(suggestions[active]);
+        applyCommand(suggestions[activeIndex]);
         return;
       }
       void onSubmit();
@@ -129,7 +128,7 @@ export function ChatInput({
           className="absolute bottom-full left-0 right-0 mb-2 rounded-md border border-[#e8e6dc] bg-white shadow-lg overflow-hidden"
         >
           {suggestions.map((cmd, idx) => {
-            const focused = idx === active;
+            const focused = idx === activeIndex;
             return (
               <li
                 key={cmd.command}

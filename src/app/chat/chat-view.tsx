@@ -33,12 +33,12 @@ export function ChatView({ initialConversationId, recent: initialRecent }: ChatV
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!conversationId) {
-      setHistory([]);
-      return;
-    }
     let alive = true;
     (async () => {
+      if (!conversationId) {
+        if (alive) setHistory([]);
+        return;
+      }
       try {
         const res = await fetch(
           `/api/director/conversations/${conversationId}`,
@@ -63,7 +63,6 @@ export function ChatView({ initialConversationId, recent: initialRecent }: ChatV
     const optimistic: Message = {
       id: -Date.now(),
       conversationId: conversationId ?? 0,
-      siteId: null,
       role: "user",
       content: text,
       payload: null,

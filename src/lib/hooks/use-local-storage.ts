@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * SSR-safe parser. JSON.parse with a fallback when the stored value is
@@ -16,53 +16,63 @@ export function parseStoredValue<T>(raw: string | null, fallback: T): T {
   }
 }
 
+// Same-tab cross-component sync: the native `storage` event only fires in
+// OTHER tabs, so setValue dispatches this custom event for siblings here.
+const SYNC_EVENT = "uteont:local-storage";
+
+function subscribe(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  window.addEventListener(SYNC_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(SYNC_EVENT, callback);
+  };
+}
+
 /**
  * Persist a small piece of UI state in localStorage.
  *
- * First render returns `initialValue` (server + first client paint). On
- * mount we read the stored value and re-render, so the value is "wrong"
- * for one paint — fine for collapsible chrome where the default state
- * matches the most common case (expanded). For state where flicker is
- * unacceptable, render the consumer behind a `hasHydrated` boolean.
+ * Backed by `useSyncExternalStore` so the value is read directly from the
+ * external store (localStorage) without a sync-setState-in-effect. The
+ * server snapshot is always `null` → `initialValue`, matching the first
+ * client paint, so there's no hydration mismatch and no CLS; React
+ * re-renders with the stored value after hydration.
  */
 export function useLocalStorage<T>(
   key: string,
   initialValue: T,
-): [T, (value: T | ((prev: T) => T)) => void, boolean] {
-  const [stored, setStored] = useState<T>(initialValue);
-  const [hasHydrated, setHasHydrated] = useState(false);
-
-  useEffect(() => {
+): [T, (value: T | ((prev: T) => T)) => void] {
+  const getSnapshot = (): string | null => {
     try {
-      const raw = window.localStorage.getItem(key);
-      if (raw !== null) {
-        setStored(parseStoredValue<T>(raw, initialValue));
-      }
-    } catch (e) {
-      console.warn(`[useLocalStorage] read error for "${key}":`, e);
-    } finally {
-      setHasHydrated(true);
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  };
+
+  const raw = useSyncExternalStore(subscribe, getSnapshot, () => null);
+  const value = parseStoredValue<T>(raw, initialValue);
 
   const setValue = useCallback(
-    (value: T | ((prev: T) => T)) => {
-      setStored((prev) => {
-        const next =
-          typeof value === "function"
-            ? (value as (p: T) => T)(prev)
-            : value;
-        try {
-          window.localStorage.setItem(key, JSON.stringify(next));
-        } catch (e) {
-          console.warn(`[useLocalStorage] write error for "${key}":`, e);
-        }
-        return next;
-      });
+    (next: T | ((prev: T) => T)) => {
+      try {
+        const current = parseStoredValue<T>(
+          window.localStorage.getItem(key),
+          initialValue,
+        );
+        const resolved =
+          typeof next === "function"
+            ? (next as (prev: T) => T)(current)
+            : next;
+        window.localStorage.setItem(key, JSON.stringify(resolved));
+        window.dispatchEvent(new Event(SYNC_EVENT));
+      } catch (e) {
+        console.warn(`[useLocalStorage] write error for "${key}":`, e);
+      }
     },
-    [key],
+    [key, initialValue],
   );
 
-  return [stored, setValue, hasHydrated];
+  return [value, setValue];
 }

@@ -84,16 +84,20 @@ export function ApprovalsWorkspace({ initial }: ApprovalsWorkspaceProps) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const feedbackRef = useRef<HTMLTextAreaElement>(null);
 
-  const selected = useMemo(
-    () => items.find((i) => `${i.kind}-${i.id}` === selectedKey) ?? null,
-    [items, selectedKey],
-  );
+  // Derive the effective selection during render: honour the user's
+  // explicit pick while it's still in the queue, otherwise fall back to
+  // the head. Avoids an auto-advance effect (and its setState-in-effect).
+  const effectiveKey = useMemo(() => {
+    if (selectedKey && items.some((i) => `${i.kind}-${i.id}` === selectedKey)) {
+      return selectedKey;
+    }
+    return items.length ? `${items[0].kind}-${items[0].id}` : null;
+  }, [items, selectedKey]);
 
-  // Auto-select the head of the queue when the current selection is removed.
-  useEffect(() => {
-    if (selected) return;
-    setSelectedKey(items.length ? `${items[0].kind}-${items[0].id}` : null);
-  }, [items, selected]);
+  const selected = useMemo(
+    () => items.find((i) => `${i.kind}-${i.id}` === effectiveKey) ?? null,
+    [items, effectiveKey],
+  );
 
   // Focus the feedback textarea when the user opens Reject & Refine.
   useEffect(() => {
@@ -169,7 +173,7 @@ export function ApprovalsWorkspace({ initial }: ApprovalsWorkspaceProps) {
           <ul className="divide-y divide-[#f3f1ea] max-h-[70vh] overflow-y-auto">
             {items.map((item) => {
               const key = `${item.kind}-${item.id}`;
-              const active = selectedKey === key;
+              const active = effectiveKey === key;
               return (
                 <li key={key}>
                   <button
