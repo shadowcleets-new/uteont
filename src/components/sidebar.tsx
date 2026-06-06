@@ -18,6 +18,7 @@ import {
   Workflow,
   Trophy,
   LineChart as LineChartIcon,
+  ShieldOff,
 } from "lucide-react";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
@@ -63,6 +64,7 @@ const SECTIONS: NavSection[] = [
     title: "DATA",
     items: [
       { label: "Keywords", href: "/keywords", icon: Hash },
+      { label: "Exclusions", href: "/exclusions", icon: ShieldOff },
       { label: "Competitors", href: "/competitors", icon: Trophy },
       { label: "Analytics", href: "/analytics", icon: LineChartIcon },
       { label: "Runs", href: "/runs", icon: Activity },
