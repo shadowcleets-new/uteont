@@ -42,6 +42,12 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // This project is checked out as a git worktree nested under the parent
+  // repo, so Next detects lockfiles at both levels and would otherwise
+  // guess the parent as the workspace root. Pin it to this directory.
+  turbopack: {
+    root: __dirname,
+  },
   async headers() {
     return [
       {
