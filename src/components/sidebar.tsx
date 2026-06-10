@@ -25,6 +25,7 @@ const SECTIONS: NavSection[] = [
       { label: "Sites", href: "/sites" },
       { label: "Targets", href: "/targets" },
       { label: "Analytics", href: "/analytics" },
+      { label: "Pipeline", href: "/pipeline" },
       { label: "Approvals", href: "/approvals" },
       { label: "Director (Chat)", href: "/chat" },
     ],
