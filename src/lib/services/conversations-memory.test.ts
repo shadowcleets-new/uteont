@@ -25,7 +25,7 @@ afterEach(async () => {
 });
 
 describe("director context (live DB)", () => {
-  it("returns the whole thread with no summary, then windows after a summary is set", async () => {
+  it("returns the whole thread with no summary, then windows after a summary is set", { timeout: 15000 }, async () => {
     const conv = await createConversation({ title: "__test_mem" });
     convId = conv.id;
     await appendMessage({ conversationId: conv.id, role: "user", content: "one" });
