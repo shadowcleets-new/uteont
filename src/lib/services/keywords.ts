@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { keywords } from "@/lib/db/schema";
+import { keywords, type Keyword } from "@/lib/db/schema";
+import {
+  addExclusion,
+  removeExclusionByPhrase,
+} from "./keyword-exclusions";
 
 export async function listKeywords(opts: { cycleId?: number; siteId?: number; status?: string; limit?: number } = {}) {
   const db = getDb();
@@ -30,6 +34,36 @@ function buildStatusSet(patch: { status?: string; shelvedReason?: string | null 
   return setObj;
 }
 
+/**
+ * Closed-loop side-effect of a status change: shelving captures the
+ * phrase as an exclusion (future research runs suppress it); any other
+ * status releases a matching exclusion so a restored/approved keyword
+ * isn't re-blocked at the next ingestion. Best-effort — an exclusion
+ * hiccup never fails the keyword update itself.
+ */
+async function syncExclusionForStatus(
+  row: Pick<Keyword, "id" | "siteId" | "keyword">,
+  status: string | undefined,
+  shelvedReason: string | null | undefined,
+): Promise<void> {
+  if (status === undefined) return;
+  try {
+    if (status === "shelved") {
+      await addExclusion({
+        siteId: row.siteId,
+        phrase: row.keyword,
+        reason: shelvedReason ?? null,
+        source: "keyword",
+        sourceId: row.id,
+      });
+    } else {
+      await removeExclusionByPhrase(row.siteId, row.keyword);
+    }
+  } catch (e) {
+    console.warn("keywords: exclusion sync failed", e);
+  }
+}
+
 export async function updateKeyword(
   id: number,
   patch: { status?: string; shelvedReason?: string | null },
@@ -42,6 +76,9 @@ export async function updateKeyword(
     .set(setObj)
     .where(eq(keywords.id, id))
     .returning();
+  if (row) {
+    await syncExclusionForStatus(row, patch.status, patch.shelvedReason);
+  }
   return row ?? null;
 }
 
@@ -57,7 +94,10 @@ export async function bulkUpdateKeywords(
     .update(keywords)
     .set(setObj)
     .where(inArray(keywords.id, ids))
-    .returning({ id: keywords.id });
+    .returning({ id: keywords.id, siteId: keywords.siteId, keyword: keywords.keyword });
+  for (const row of rows) {
+    await syncExclusionForStatus(row, patch.status, patch.shelvedReason);
+  }
   return rows.length;
 }
 

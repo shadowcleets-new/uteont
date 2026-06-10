@@ -6,6 +6,8 @@
 ## 1. Current Focus
 Port `pensive-mayer`'s unique features onto `main`'s services, on branch
 `feature/seo-refactor`, so each lands as natural app flow (not a forced graft).
+**Port #1 (keyword exclusions) — DONE** (TDD, 23 new tests, full suite 217/217,
+tsc+lint+build clean). Next: port #2, Analytics portal.
 
 ## 2. Current Milestone Status
 Branch fragmentation has been consolidated (2026-06-11):
@@ -44,11 +46,18 @@ graft pensive's screens onto main's services; never duplicate logic.**
   `git push origin claude/pensive-mayer-71b49f` for off-site durability.
 
 ## 5. Next Immediate Steps (port order, low→high conflict)
-1. **Keyword exclusions** (pensive `/exclusions` + `exclusion-filter.ts`) →
-   new `/exclusions` page + migration `0011_keyword_exclusions`; wire into
-   research/keywords flow. (brainstorm → plan → TDD per AGENTS.md.)
-2. **Analytics portal** (`/analytics`) → rewire charts to main's real
+1. **Analytics portal** (`/analytics`) → rewire charts to main's real
    `integrations/ga4.ts` + `gsc.ts`.
-3. **Cost meter + target tooltips** → back with main's `gemini-cost.ts`.
-   (Then: Runs console + Settings, pipeline stepper, split-pane Approvals,
-   Director redesign, Competitors workspace.)
+2. **Cost meter + target tooltips** → back with main's `gemini-cost.ts`.
+3. **Runs console + categorized Settings** → graft UI, keep main's wiring.
+   (Then: pipeline stepper, split-pane Approvals, Director redesign,
+   Competitors workspace.)
+
+Port #1 shipped (this branch): `keyword_exclusions` table (0011 — already
+present in live Neon via the pensive line, verified), exclusion-filter lib
+(+ filterKeywordRows ingestion seam), keyword-exclusions service,
+capture-on-shelve/release-on-restore in keywords service (single + bulk),
+payload.exclusions on research/idea-generation dispatch (pre-dedupe-key),
+ingestion-time filter in persistResearchKeywords (rejection trail on the
+run), /exclusions page (active-site pattern), API under
+/api/sites/[id]/exclusions, sidebar entry.

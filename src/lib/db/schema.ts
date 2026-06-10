@@ -174,6 +174,31 @@ export const keywords = pgTable(
   }),
 );
 
+/**
+ * Closed-loop negative feedback: phrases the operator rejected (shelved
+ * keyword, manual add on /exclusions). Suppressed from future runs both
+ * at prompt time (payload.exclusions) and at ingestion time (lexical
+ * filter in persistResearchKeywords). A unique index on
+ * (site_id, LOWER(phrase)) — declared in migration 0011, expression
+ * indexes live in SQL — collapses case variants so captures are
+ * idempotent.
+ */
+export const keywordExclusions = pgTable(
+  "keyword_exclusions",
+  {
+    id:        serial("id").primaryKey(),
+    siteId:    integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    phrase:    text("phrase").notNull(),
+    reason:    text("reason"),
+    source:    text("source").notNull().default("keyword"),  // keyword | idea | article | manual
+    sourceId:  integer("source_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite: index("keyword_exclusions_site_idx").on(t.siteId),
+  }),
+);
+
 export const ideas = pgTable(
   "ideas",
   {
@@ -514,6 +539,7 @@ export type Cycle = typeof cycles.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type Keyword = typeof keywords.$inferSelect;
+export type KeywordExclusion = typeof keywordExclusions.$inferSelect;
 export type Idea = typeof ideas.$inferSelect;
 export type Article = typeof articles.$inferSelect;
 export type Approval = typeof approvals.$inferSelect;
