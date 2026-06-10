@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AGENTS } from "@/lib/agents/registry";
 import { pausedAgentKeys } from "@/lib/services/agent-state";
+import { pickModel, type ModelTask } from "@/lib/services/model-router";
 import { pauseAgentAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -105,6 +106,28 @@ export default async function SettingsPage() {
         </div>
         <p className="text-[11px] text-[#9a988e] mt-3 font-serif">
           Paused agents reject new runs — from the Run forms and the Director — until resumed.
+        </p>
+      </section>
+
+      <section className="mb-8">
+        <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">MODEL ROUTING</div>
+        <div className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden">
+          {(
+            [
+              { task: "director", label: "Director (planning)", env: "GEMINI_MODEL_DIRECTOR" },
+              { task: "director-report", label: "Director (job reports)", env: "GEMINI_MODEL_DIRECTOR" },
+              { task: "summarize", label: "Chat compaction", env: "GEMINI_MODEL_SUMMARIZE" },
+            ] as Array<{ task: ModelTask; label: string; env: string }>
+          ).map((row) => (
+            <div key={row.label} className="flex items-center gap-3 px-4 py-2.5 border-t border-[#f3f1ea] first:border-t-0">
+              <span className="text-[12px] text-[#141413]">{row.label}</span>
+              <code className="text-[11px] text-[#6b6a64] ml-auto shrink-0">{pickModel(row.task)}</code>
+              <span className="text-[10px] text-[#9a988e] shrink-0">override: {row.env}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-[#9a988e] mt-3 font-serif">
+          Read-only view of the active routing — change it by setting the override variable in Vercel.
         </p>
       </section>
 
