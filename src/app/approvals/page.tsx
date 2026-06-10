@@ -13,6 +13,7 @@ export default async function ApprovalsPage() {
     summary: c.summary ?? null,
     blastRadius: c.blastRadius,
     createdAt: (c.createdAt as Date)?.toISOString?.() ?? String(c.createdAt),
+    payload: (c.payload as Record<string, unknown> | null) ?? null,
   }));
 
   return (
