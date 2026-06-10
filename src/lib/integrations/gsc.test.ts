@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   gscDateRange, buildSearchAnalyticsBody, summarizeSearchAnalytics, buildConsentUrl, candidatePropertyUrls,
+  buildSearchAnalyticsBodyByDate, buildSearchAnalyticsBodyByQuery, parseDailyRows, parseQueryRows,
 } from "./gsc";
 
 const DAY = 86_400_000;
@@ -84,5 +85,68 @@ describe("buildConsentUrl", () => {
     expect(url).toContain("webmasters.readonly");
     expect(url).toContain("state=state123");
     expect(url).toContain("client_id=client-xyz");
+  });
+});
+
+describe("buildSearchAnalyticsBodyByDate", () => {
+  it("requests one row per day over the range", () => {
+    const body = buildSearchAnalyticsBodyByDate({ startDate: "2026-01-01", endDate: "2026-01-28" });
+    expect(body).toMatchObject({
+      startDate: "2026-01-01",
+      endDate: "2026-01-28",
+      dimensions: ["date"],
+    });
+    expect(Number(body.rowLimit)).toBeGreaterThanOrEqual(90);
+  });
+});
+
+describe("buildSearchAnalyticsBodyByQuery", () => {
+  it("requests per-query rows capped at the limit", () => {
+    const body = buildSearchAnalyticsBodyByQuery({ startDate: "2026-01-01", endDate: "2026-01-28" }, 50);
+    expect(body).toMatchObject({
+      startDate: "2026-01-01",
+      endDate: "2026-01-28",
+      dimensions: ["query"],
+      rowLimit: 50,
+    });
+  });
+});
+
+describe("parseDailyRows", () => {
+  it("maps keyed rows to chronological day points", () => {
+    const rows = parseDailyRows({
+      rows: [
+        { keys: ["2026-01-02"], clicks: 5.4, impressions: 100.2, ctr: 0.05, position: 8.21 },
+        { keys: ["2026-01-01"], clicks: 2, impressions: 50, ctr: 0.04, position: 11.5 },
+      ],
+    });
+    expect(rows.map((r) => r.day)).toEqual(["2026-01-01", "2026-01-02"]);
+    expect(rows[1]).toEqual({ day: "2026-01-02", clicks: 5, impressions: 100, ctr: 0.05, position: 8.2 });
+  });
+
+  it("returns [] for empty/malformed payloads", () => {
+    expect(parseDailyRows({})).toEqual([]);
+    expect(parseDailyRows({ rows: [] })).toEqual([]);
+    expect(parseDailyRows(null)).toEqual([]);
+  });
+});
+
+describe("parseQueryRows", () => {
+  it("maps keyed rows to query rows, preserving API order", () => {
+    const rows = parseQueryRows({
+      rows: [
+        { keys: ["best widgets"], clicks: 12, impressions: 900, ctr: 0.013, position: 4.4 },
+        { keys: ["widget reviews"], clicks: 3, impressions: 200, ctr: 0.015, position: 14.9 },
+      ],
+    });
+    expect(rows).toEqual([
+      { query: "best widgets", clicks: 12, impressions: 900, ctr: 0.013, position: 4.4 },
+      { query: "widget reviews", clicks: 3, impressions: 200, ctr: 0.015, position: 14.9 },
+    ]);
+  });
+
+  it("returns [] for empty/malformed payloads", () => {
+    expect(parseQueryRows({})).toEqual([]);
+    expect(parseQueryRows(undefined)).toEqual([]);
   });
 });

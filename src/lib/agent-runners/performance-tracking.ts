@@ -31,8 +31,12 @@ export interface PerformanceResult {
   pulledAt: string;
 }
 
-/** Load the site's decrypted GSC config, or null (also null if the key is missing). */
-async function loadGscConfig(siteId: number, fallbackProperty?: string): Promise<GscConfig | null> {
+/**
+ * Load the site's decrypted GSC config, or null (also null if the key is
+ * missing). Exported so other GSC-backed surfaces (the Analytics portal)
+ * resolve credentials through the exact same path as the daily pull.
+ */
+export async function loadGscConfig(siteId: number, fallbackProperty?: string): Promise<GscConfig | null> {
   const db = getDb();
   const [row] = await db
     .select()

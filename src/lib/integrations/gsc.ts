@@ -61,6 +61,63 @@ export function summarizeSearchAnalytics(apiJson: unknown): GscSummary {
   };
 }
 
+/** searchAnalytics.query body for one row per day (charts). */
+export function buildSearchAnalyticsBodyByDate(range: DateRange): Record<string, unknown> {
+  return { startDate: range.startDate, endDate: range.endDate, dimensions: ["date"], rowLimit: 1000 };
+}
+
+/** searchAnalytics.query body for per-query rows (rankings table). */
+export function buildSearchAnalyticsBodyByQuery(range: DateRange, limit = 100): Record<string, unknown> {
+  return { startDate: range.startDate, endDate: range.endDate, dimensions: ["query"], rowLimit: limit };
+}
+
+export interface GscDailyPoint {
+  day: string; // YYYY-MM-DD
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface GscQueryRow {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+type KeyedRow = { keys?: string[]; clicks?: number; impressions?: number; ctr?: number; position?: number };
+
+/** Map a by-date response to chronological day points. [] on anything malformed. */
+export function parseDailyRows(apiJson: unknown): GscDailyPoint[] {
+  const rows = (apiJson as { rows?: KeyedRow[] })?.rows ?? [];
+  return rows
+    .filter((r) => Array.isArray(r.keys) && typeof r.keys[0] === "string")
+    .map((r) => ({
+      day: r.keys![0],
+      clicks: Math.round(r.clicks ?? 0),
+      impressions: Math.round(r.impressions ?? 0),
+      ctr: Math.round((r.ctr ?? 0) * 10000) / 10000,
+      position: Math.round((r.position ?? 0) * 10) / 10,
+    }))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+/** Map a by-query response to query rows, preserving the API's click-sorted order. */
+export function parseQueryRows(apiJson: unknown): GscQueryRow[] {
+  const rows = (apiJson as { rows?: KeyedRow[] })?.rows ?? [];
+  return rows
+    .filter((r) => Array.isArray(r.keys) && typeof r.keys[0] === "string")
+    .map((r) => ({
+      query: r.keys![0],
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: r.ctr ?? 0,
+      position: r.position ?? 0,
+    }));
+}
+
 /** OAuth consent URL (offline + forced consent to guarantee a refresh token), or null if unconfigured. */
 export function buildConsentUrl(redirectUri: string, state: string): string | null {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
@@ -198,6 +255,37 @@ export async function fetchGscSummary(
   for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
     const json = await querySearchAnalytics(property, accessToken, body);
     if (json != null) return summarizeSearchAnalytics(json);
+  }
+  return null;
+}
+
+/** End-to-end: refresh token → per-day series. null on any failure. */
+export async function fetchGscDailySeries(
+  cfg: GscConfig,
+  range: DateRange = gscDateRange(Date.now()),
+): Promise<GscDailyPoint[] | null> {
+  const accessToken = await refreshAccessToken(cfg.refreshToken);
+  if (!accessToken) return null;
+  const body = buildSearchAnalyticsBodyByDate(range);
+  for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
+    const json = await querySearchAnalytics(property, accessToken, body);
+    if (json != null) return parseDailyRows(json);
+  }
+  return null;
+}
+
+/** End-to-end: refresh token → top queries. null on any failure. */
+export async function fetchGscTopQueries(
+  cfg: GscConfig,
+  range: DateRange = gscDateRange(Date.now()),
+  limit = 100,
+): Promise<GscQueryRow[] | null> {
+  const accessToken = await refreshAccessToken(cfg.refreshToken);
+  if (!accessToken) return null;
+  const body = buildSearchAnalyticsBodyByQuery(range, limit);
+  for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
+    const json = await querySearchAnalytics(property, accessToken, body);
+    if (json != null) return parseQueryRows(json);
   }
   return null;
 }
