@@ -4,60 +4,56 @@
 > Keep ≤100 lines.
 
 ## 1. Current Focus
-Port `pensive-mayer`'s unique features onto `main`'s services, on branch
-`feature/seo-refactor`, so each lands as natural app flow (not a forced graft).
-**Port #1 (keyword exclusions) — DONE** (TDD, 23 new tests, full suite 217/217,
-tsc+lint+build clean). Next: port #2, Analytics portal.
+**The pensive→main feature port is COMPLETE (all 8 ports, 2026-06-11).**
+`feature/seo-refactor` holds the full integration; next step is review +
+squash-merge to `main`, then delete the branch per the git protocol.
 
 ## 2. Current Milestone Status
-Branch fragmentation has been consolidated (2026-06-11):
-- **Trunk = `main` = `origin/main` (`f4b5deb`)** — the "Waves" production line:
-  13/14 agents (only `publishing` off), migrations `0000`–`0010`, real GA4 / GSC /
-  Slack clients, checkpoint + 5-verb approval machine, decision-records, SSE
-  streaming, untrusted fencing, target snapshots/confidence bands.
-- **Active branch = `feature/seo-refactor`** (off `main`) — single integration
-  branch; squash-merge to `main` when the port is done.
-- **Port source = `claude/pensive-mayer-71b49f`** ("Milestones 1–10", LOCAL-ONLY,
-  tag `archive/pensive-milestones`). Unique vs main: Analytics portal,
-  Competitors workspace, pipeline stepper, Director chat redesign, split-pane
-  Approvals UI, closed-loop keyword exclusions, cost meter.
-- **Preserved: `wip/root-main-uncommitted` (`0f4fbd5`)** — ~400 lines of
-  uncommitted work that was sitting on the old root/main base; evaluate before
-  discarding. Tag `archive/local-main-pre-reset` anchors the old base.
-- Retired: `worktree-cost-efficiency-hardening` (== main), `affectionate-lovelace`
-  (empty dupe). `site-context-foundation` deferred (1 uncommitted file).
+Consolidation done: trunk = `main` (= `origin/main`, the "Waves" line).
+All unique pensive-mayer ("Milestones") features now live on
+`feature/seo-refactor`, grafted onto main's services:
 
-Guiding principle: **main has the stronger backend, pensive the stronger UI →
-graft pensive's screens onto main's services; never duplicate logic.**
+1. **Exclusions** — closed loop: shelve→capture, restore→release, prompt-time
+   `payload.exclusions`, deterministic ingestion filter + rejection trail;
+   `/exclusions` page; migration `0011` (table already in live Neon, verified).
+2. **Analytics** (`/analytics`) — live GSC daily series + top-query rankings
+   (new tested by-date/by-query client fns; partial LO-29c close) with honest
+   "Modeled" fallback badge when GSC is inert; real articles/day axis.
+3. **Cost meter + tooltips** — cost-projection lib (tested) + CostMeter on the
+   Content Draft agent page; InfoTooltips on target form fields.
+4. **Runs console** — expandable RunCard (timeline, tokens/cost, error console
+   + hints); Settings gains read-only MODEL ROUTING card. (pensive's dead-knob
+   AgentConfigForm intentionally not ported.)
+5. **Pipeline** (`/pipeline`) — six-step stepper derived from observable DB
+   state (state machine ported with 9 tests); `/api/pipeline/[cycleId]`.
+6. **Approvals** — split-pane workspace on main's checkpoint machine (5 verbs,
+   graduated friction, decision notes); payload-aware detail (draft markdown /
+   idea list / outreach email); markdown renderer ported with 10 tests.
+7. **Chat** — slash commands (/research /audit /status, 7 tests), typing dots,
+   smart near-bottom scroll; main's rename/delete/search/memory untouched.
+8. **Competitors** (`/competitors`) — UPGRADED from pensive's stub: scan runs
+   the REAL Site Crawl agent inline; Directory derives from real scan runs
+   (crawl score, failing checks, thin/orphan samples; CSV/JSON export).
++ scripts: `seed-admin.mjs`, `verify-migration.mjs` (full 22-table check).
+
+Tests: started 217 → now 273 (56 new, all TDD red→green). Each port a clean
+commit; tsc + eslint + build green at every step.
 
 ## 3. Active Working Context
-- Stack: Next.js 16 (breaking changes — read `node_modules/next/dist/docs/`
-  before writing code; see AGENTS.md). DB: Neon Postgres via Drizzle.
-- Worker: Python/Playwright (Railway) for `runtime:"worker"` agents
-  (research, idea-generation, content-writing, backlink) — needs `GEMINI_API_KEY`.
-- Migration collision resolved: main keeps `0004_site_foundation`; pensive's
-  `keyword_exclusions` schema becomes a NEW `0011_*` on this branch.
-- Worktrees: `git worktree list`. This branch's worktree: `.claude/worktrees/seo-refactor`.
+- Stack: Next.js 16 (read `node_modules/next/dist/docs/` before writing code).
+  DB: Neon Postgres via Drizzle. Worker: Python/Playwright on Railway.
+- Worktree: `.claude/worktrees/seo-refactor`; branch pushed to origin.
+- Migration `0011` staged in-repo; live Neon already has the table.
 
 ## 4. Roadblocks / cautions
 - Do NOT `db:migrate` blind (LO-41 journal-drift risk on live Neon).
-- Critic / Tactics Scraper / NotebookLM (LO-59/61/63) do NOT exist on any branch.
-- pensive + the archive tags are LOCAL-ONLY — `git push origin --tags` +
-  `git push origin claude/pensive-mayer-71b49f` for off-site durability.
+- Critic / Tactics Scraper / NotebookLM (LO-59/61/63) still don't exist anywhere.
+- pensive + archive tags are LOCAL-ONLY — push for durability:
+  `git push origin claude/pensive-mayer-71b49f archive/pensive-milestones archive/local-main-pre-reset`
+- `wip/root-main-uncommitted` (`0f4fbd5`) still awaits evaluation.
 
-## 5. Next Immediate Steps (port order, low→high conflict)
-1. **Analytics portal** (`/analytics`) → rewire charts to main's real
-   `integrations/ga4.ts` + `gsc.ts`.
-2. **Cost meter + target tooltips** → back with main's `gemini-cost.ts`.
-3. **Runs console + categorized Settings** → graft UI, keep main's wiring.
-   (Then: pipeline stepper, split-pane Approvals, Director redesign,
-   Competitors workspace.)
-
-Port #1 shipped (this branch): `keyword_exclusions` table (0011 — already
-present in live Neon via the pensive line, verified), exclusion-filter lib
-(+ filterKeywordRows ingestion seam), keyword-exclusions service,
-capture-on-shelve/release-on-restore in keywords service (single + bulk),
-payload.exclusions on research/idea-generation dispatch (pre-dedupe-key),
-ingestion-time filter in persistResearchKeywords (rejection trail on the
-run), /exclusions page (active-site pattern), API under
-/api/sites/[id]/exclusions, sidebar entry.
+## 5. Next Immediate Steps
+1. Review the full diff (adversarial pass), fix anything real.
+2. Squash-merge `feature/seo-refactor` → `main`, push, delete branch + retire
+   the pensive worktree (`git worktree remove` first).
+3. Resume the product backlog (next: LO-59 Critic agent or LO-22 polish).
