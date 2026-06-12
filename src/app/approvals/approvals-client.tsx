@@ -104,7 +104,9 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
   const [busy, setBusy] = useState<Verb | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [noteFor, setNoteFor] = useState<Verb | null>(null);
+  // The note box is bound to a specific checkpoint id, so a draft typed
+  // for one item can never surface on (or ride along with) another.
+  const [noteFor, setNoteFor] = useState<{ id: number; verb: Verb } | null>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
   // Honour the explicit pick while it's still queued, else fall back to the head.
@@ -122,12 +124,19 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
     if (noteFor) noteRef.current?.focus();
   }, [noteFor]);
 
+  const noteOpenForSelected =
+    selected != null && noteFor != null && noteFor.id === selected.id;
+
   async function decide(verb: Verb) {
     if (!selected || busy) return;
 
-    // First click on a note-bearing verb opens the note box; second sends.
-    if (NOTE_VERBS.includes(verb) && noteFor !== verb) {
-      setNoteFor(verb);
+    // First click on a note-bearing verb opens the note box for THIS
+    // checkpoint; the second click sends. A box opened on a different
+    // checkpoint (or verb) never satisfies the guard.
+    const armed = noteOpenForSelected && noteFor.verb === verb;
+    if (NOTE_VERBS.includes(verb) && !armed) {
+      if (!noteOpenForSelected) setNote(""); // drop any stale draft from another item
+      setNoteFor({ id: selected.id, verb });
       return;
     }
 
@@ -150,10 +159,16 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
     setNoteFor(null);
 
     try {
+      // The note belongs to this checkpoint + verb only — a stray draft must
+      // not ride along with Approve/Defer or a different item's decision.
+      const noteToSend =
+        noteFor?.id === removed.id && noteFor.verb === verb && note.trim()
+          ? note.trim()
+          : undefined;
       const res = await fetch(`/api/checkpoints/${removed.id}/decide`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verb, note: note.trim() || undefined }),
+        body: JSON.stringify({ verb, note: noteToSend }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -255,13 +270,13 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
 
             <div className="sticky bottom-0 left-0 right-0 border-t border-[#e8e6dc] bg-white/95 backdrop-blur px-6 py-3">
               {err && <div className="mb-2 text-[12px] text-[#a33b2b] font-mono">{err}</div>}
-              {noteFor && (
+              {noteOpenForSelected && (
                 <div className="mb-3">
                   <label
                     htmlFor="decision-note"
                     className="block text-[10px] font-bold tracking-wider text-[#9a988e] mb-1"
                   >
-                    {noteFor.toUpperCase()} — note for the agent / decision ledger
+                    {noteFor.verb.toUpperCase()} — note for the agent / decision ledger
                   </label>
                   <textarea
                     id="decision-note"
@@ -285,14 +300,18 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
                     <button
                       key={verb}
                       type="button"
-                      disabled={!!busy || (noteFor === verb && note.trim().length === 0 && verb !== "escalate")}
+                      disabled={!!busy || (noteOpenForSelected && noteFor.verb === verb && note.trim().length === 0 && verb !== "escalate")}
                       onClick={() => decide(verb)}
                       className={cn(
                         "rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50",
                         VERB_STYLE[verb].cls,
                       )}
                     >
-                      {busy === verb ? `${VERB_STYLE[verb].label}…` : noteFor === verb ? "Send" : VERB_STYLE[verb].label}
+                      {busy === verb
+                        ? `${VERB_STYLE[verb].label}…`
+                        : noteOpenForSelected && noteFor.verb === verb
+                          ? "Send"
+                          : VERB_STYLE[verb].label}
                     </button>
                   ))}
                 </div>

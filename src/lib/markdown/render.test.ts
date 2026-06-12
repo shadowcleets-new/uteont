@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tokenize } from "./render";
+import { safeHref, tokenize } from "./render";
 
 describe("tokenize", () => {
   it("returns an empty array on empty input", () => {
@@ -79,5 +79,24 @@ Closing.`;
       "quote",
       "p",
     ]);
+  });
+});
+
+describe("safeHref", () => {
+  it("allows http/https/mailto and relative urls", () => {
+    expect(safeHref("https://example.com/a")).toBe("https://example.com/a");
+    expect(safeHref("http://example.com")).toBe("http://example.com");
+    expect(safeHref("mailto:a@b.com")).toBe("mailto:a@b.com");
+    expect(safeHref("/docs/page")).toBe("/docs/page");
+    expect(safeHref("#section")).toBe("#section");
+    expect(safeHref("relative/path")).toBe("relative/path");
+  });
+
+  it("rejects javascript:, data:, vbscript: and scheme-case tricks", () => {
+    expect(safeHref("javascript:alert(1)")).toBeNull();
+    expect(safeHref("JaVaScRiPt:alert(1)")).toBeNull();
+    expect(safeHref("data:text/html;base64,xxx")).toBeNull();
+    expect(safeHref("vbscript:msgbox(1)")).toBeNull();
+    expect(safeHref("file:///etc/passwd")).toBeNull();
   });
 });

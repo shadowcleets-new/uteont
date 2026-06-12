@@ -159,9 +159,32 @@ function sitemapLocs(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1].trim());
 }
 
+/**
+ * SSRF guard: hostnames that must never be crawled — loopback, RFC-1918
+ * private ranges, link-local (incl. the cloud metadata IP), and mDNS
+ * .local names. Hostname-level only (no DNS resolution), which matches
+ * the single-operator threat model; covers every runSiteCrawl caller.
+ */
+export function isBlockedHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return true;
+  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd")) return true; // IPv6 loopback + ULA
+  const ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (!ip) return false;
+  const [a, b] = [Number(ip[1]), Number(ip[2])];
+  if (a === 127 || a === 10 || a === 0) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true; // link-local + cloud metadata
+  return false;
+}
+
 export async function runSiteCrawl(rawUrl: string): Promise<SiteCrawlResult> {
   const entryUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
   const entry = new URL(entryUrl);
+  if (isBlockedHost(entry.hostname)) {
+    throw new Error(`refusing to crawl non-public host: ${entry.hostname}`);
+  }
   const host = entry.host.toLowerCase();
   const origin = entry.origin;
   const entryKey = entry.pathname.replace(/\/+$/, "").toLowerCase() || "/";

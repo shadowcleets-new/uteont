@@ -146,13 +146,21 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
     })();
   }, [conversationId]);
 
-  // Smart scroll: follow new messages only when the reader is already near
-  // the bottom — don't yank them down while they're re-reading history.
+  // Smart scroll: follow new messages only when the reader was already near
+  // the bottom BEFORE the new content rendered — don't yank them down while
+  // they're re-reading history. The pinned state is tracked from scroll
+  // events (not measured post-render, which a tall new message would break).
+  const pinnedRef = useRef(true);
+
+  useEffect(() => {
+    // Opening/switching a conversation always lands on the latest message.
+    pinnedRef.current = true;
+  }, [conversationId]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-    if (nearBottom || history.length <= 1) {
+    if (pinnedRef.current || history.length <= 1) {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [history.length]);
@@ -350,6 +358,10 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
         })()}
         <div
           ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+          }}
           className="flex-1 overflow-y-auto px-8 py-6"
         >
           {history.length === 0 ? (

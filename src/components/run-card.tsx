@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   ChevronDown,
   ChevronRight,
@@ -10,6 +11,7 @@ import {
   CircleCheck,
   Clock,
   Coins,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Run } from "@/lib/db/schema";
@@ -135,6 +137,15 @@ export function RunCard({ run }: RunCardProps) {
 
       {open && (
         <div className="border-t border-[#e8e6dc] bg-[#faf9f5] px-5 py-4">
+          <div className="mb-3">
+            <Link
+              href={`/runs?subject=${encodeURIComponent(run.subjectKey)}`}
+              className="inline-flex items-center gap-1 text-[11px] text-[#6b6a64] hover:text-[#d97757] underline decoration-[#cfccc1] hover:decoration-[#d97757] transition-colors"
+            >
+              <Filter className="h-3 w-3" aria-hidden />
+              Filter runs by {run.subjectKey}
+            </Link>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3 text-[11px]">
             <Meta
               icon={<Clock className="h-3.5 w-3.5" aria-hidden />}

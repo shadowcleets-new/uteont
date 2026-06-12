@@ -36,7 +36,7 @@ All unique pensive-mayer ("Milestones") features now live on
    (crawl score, failing checks, thin/orphan samples; CSV/JSON export).
 + scripts: `seed-admin.mjs`, `verify-migration.mjs` (full 22-table check).
 
-Tests: started 217 → now 263 (46 new, all TDD red→green). Each port a clean
+Tests: started 217 → now 267 (50 new, all TDD red→green). Each port a clean
 commit; tsc + eslint + build green at every step.
 
 ## 3. Active Working Context

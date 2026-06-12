@@ -121,23 +121,42 @@ export function tokenize(input: string): Token[] {
 
 // --- Inline rendering ---------------------------------------------------
 
+/**
+ * Scheme allowlist for markdown links. Agent-drafted markdown can embed
+ * content the agents scraped from the open web, so a javascript:/data:
+ * href here would be a stored-XSS seam (React renders hrefs verbatim).
+ * Returns null for anything that isn't http(s), mailto, or relative.
+ */
+export function safeHref(url: string): string | null {
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url)?.[1]?.toLowerCase();
+  if (!scheme) return url; // relative (/path, #anchor, foo/bar)
+  return scheme === "http" || scheme === "https" || scheme === "mailto" ? url : null;
+}
+
 const INLINE_PATTERNS: Array<{
   re: RegExp;
   build: (m: RegExpExecArray, key: string) => ReactNode;
 }> = [
   {
     re: /\[([^\]]+)\]\(([^)\s]+)\)/,
-    build: (m, key) => (
-      <a
-        key={key}
-        href={m[2]}
-        target="_blank"
-        rel="noreferrer"
-        className="text-[#6a9bcc] underline decoration-[#cfccc1] hover:decoration-[#6a9bcc]"
-      >
-        {m[1]}
-      </a>
-    ),
+    build: (m, key) => {
+      const href = safeHref(m[2]);
+      if (!href) {
+        // Disallowed scheme — render the label as plain text, no link.
+        return <Fragment key={key}>{m[1]}</Fragment>;
+      }
+      return (
+        <a
+          key={key}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[#6a9bcc] underline decoration-[#cfccc1] hover:decoration-[#6a9bcc]"
+        >
+          {m[1]}
+        </a>
+      );
+    },
   },
   {
     re: /\*\*([^*]+)\*\*/,
