@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/claude-guard-edit.mjs",
+            "comment": "LO-78: block edits to .env* (secret-leak guard, F-031) and applied drizzle/00NN_*.sql migrations (journal-drift guard, F-034)."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/claude-eslint-fix.mjs",
+            "comment": "LO-79: eslint --fix the edited src/**/*.{ts,tsx} file so Next 16 breaking-change issues surface at edit time (per AGENTS.md)."
+          }
+        ]
+      }
+    ]
+  }
+}
