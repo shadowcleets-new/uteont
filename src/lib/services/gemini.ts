@@ -108,6 +108,9 @@ export async function complete(
   if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
 
   const startedAt = Date.now();
+  // Count this call toward the daily Gemini budget (best-effort, fire-and-forget)
+  // so quota-aware consumers like the Critic can stand down near exhaustion.
+  void import("./gemini-budget").then((m) => m.recordGeminiCall()).catch(() => {});
   let res: Response;
   try {
     res = await fetch(`${ENDPOINT}/${model}:generateContent`, {

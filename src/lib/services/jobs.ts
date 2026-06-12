@@ -251,6 +251,46 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
     console.warn("applyJobResult: notifyJobSuccess failed", e);
   }
 
+  // 3.5 Critic Agent (LO-59): auto-review a producing agent's terminal output
+  //     against the goal and store the verdict. Best-effort, quota-aware, and
+  //     fail-open — it never blocks or fails the job it reviews.
+  try {
+    const { shouldCritique, runCritique, recordCritique } = await import("./critic");
+    const gate = shouldCritique({ agentKey: input.agentKey, iteration: 1, budgetFraction: 1 });
+    if (gate.run) {
+      const { getCriticStrictness } = await import("./app-settings");
+      const { remainingBudgetFraction } = await import("./gemini-budget");
+      const [strictness, budgetFraction] = await Promise.all([
+        getCriticStrictness(),
+        remainingBudgetFraction(),
+      ]);
+      const endGoal = String(
+        (input.payload as Record<string, unknown> | null)?.["goal"] ??
+          (input.payload as Record<string, unknown> | null)?.["_endGoal"] ??
+          "",
+      );
+      const critique = await runCritique({
+        agentKey: input.agentKey,
+        endGoal,
+        output: critiqueInputFromResult(input.result),
+        strictness,
+        budgetFraction,
+      });
+      if (!critique.skipped) {
+        await recordCritique({
+          siteId: input.siteId,
+          agentKey: input.agentKey,
+          jobId: input.jobId ?? null,
+          runId: run.id,
+          endGoal,
+          result: critique,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("applyJobResult: critic review failed (non-blocking)", e);
+  }
+
   // 4. Director conversation system message (unless the caller will post it).
   if (!input.suppressDirectorMessage) {
     try {
@@ -277,6 +317,20 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
   }
 
   return { runId: run.id };
+}
+
+/**
+ * Distill a result blob into the text the Critic reviews. Picks the most
+ * meaningful field per agent shape (draft body, brief, idea list, outreach
+ * email, top keywords) and falls back to a compact JSON projection.
+ */
+function critiqueInputFromResult(result: Record<string, unknown>): string {
+  if (typeof result.body === "string" && result.body.trim()) return result.body;
+  if (typeof result.brief === "string" && result.brief.trim()) return result.brief;
+  if (typeof result.email === "string" && result.email.trim()) return result.email;
+  if (Array.isArray(result.ideas)) return JSON.stringify(result.ideas).slice(0, 12_000);
+  if (Array.isArray(result.top_keywords)) return JSON.stringify(result.top_keywords).slice(0, 12_000);
+  return JSON.stringify(result).slice(0, 12_000);
 }
 
 /**

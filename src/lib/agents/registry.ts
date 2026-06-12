@@ -147,6 +147,24 @@ export const AGENTS: AgentSpec[] = [
     runtime: "fn",
     implemented: true,
   },
+  {
+    key: "critic",
+    name: "Critic Agent",
+    sidebarLabel: "15. Critic",
+    description:
+      "Single-purpose reviewer: judges a producing agent's terminal output against the end goal and returns a binary verdict — serves (ship) or fails (one concrete fix). Runs automatically after the producing agents and can also review pasted output. Strictness (loose/standard/pedantic) is set in Settings; quota-aware (stands down when the daily Gemini budget is low). Needs GEMINI_API_KEY.",
+    runtime: "fn",
+    implemented: true,
+  },
+  {
+    key: "tactics-scraper",
+    name: "Tactics Scraper Agent",
+    sidebarLabel: "16. Tactics Scraper",
+    description:
+      "Scrapes marketing/SEO communities (r/SEO, r/bigseo, Hacker News, forums, blogs, X) and distills current tactics into the knowledge base that Idea Generation and the Director read during planning. Runs on the browser worker; paste any source URL on the Tactics page.",
+    runtime: "worker",
+    implemented: true,
+  },
 ];
 
 export function findAgent(key: string): AgentSpec | undefined {

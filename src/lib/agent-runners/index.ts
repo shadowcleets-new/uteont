@@ -14,6 +14,9 @@ import { runPerformanceTracking } from "./performance-tracking";
 import { runRevenue } from "./revenue";
 import { runContentBrief } from "./content-brief";
 import { runContentDraft } from "./content-draft";
+import { runCritique, recordCritique } from "@/lib/services/critic";
+import { getCriticStrictness } from "@/lib/services/app-settings";
+import { remainingBudgetFraction } from "@/lib/services/gemini-budget";
 
 export interface InlineRunnerContext {
   payload: Record<string, unknown>;
@@ -100,6 +103,25 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
     } catch {
       /* explainability is best-effort */
     }
+    return { result: result as unknown as Record<string, unknown> };
+  },
+  critic: async ({ payload }) => {
+    // Manual critique of pasted output: judge `output` against `goal`.
+    const output = String(payload.output ?? payload.article ?? "").trim();
+    if (!output) throw new Error("critic requires 'output' (the text to review) in payload");
+    const endGoal = String(payload.goal ?? payload.endGoal ?? "").trim();
+    const agentKey = String(payload.agentKey ?? "content-writing");
+    const strictness = await getCriticStrictness();
+    const budgetFraction = await remainingBudgetFraction();
+    // A manual run always reviews regardless of the auto target-agent set.
+    const result = await runCritique({ agentKey, endGoal, output, strictness, budgetFraction, force: true });
+    const site = (payload.site ?? {}) as Record<string, unknown>;
+    await recordCritique({
+      siteId: typeof site.id === "number" ? site.id : null,
+      agentKey,
+      endGoal,
+      result,
+    });
     return { result: result as unknown as Record<string, unknown> };
   },
   "content-draft": async ({ payload }) => {

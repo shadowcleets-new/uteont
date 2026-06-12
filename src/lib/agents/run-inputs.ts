@@ -52,6 +52,11 @@ export const AGENT_INPUTS: Record<string, AgentInputField[]> = {
     { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste the draft to lint…", required: true },
     { name: "targetKeyword", label: "Target keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
   ],
+  critic: [
+    { name: "output", label: "Output to review", type: "textarea", placeholder: "Paste the agent output (keywords, brief, draft, outreach…) to critique", required: true },
+    { name: "goal", label: "End goal (optional)", type: "text", placeholder: "e.g. rank #1 for 'textile manufacturing'" },
+    { name: "agentKey", label: "Producing agent (optional)", type: "text", placeholder: "e.g. content-writing" },
+  ],
   // Worker (Railway) agents — required fields the worker validates (raises ValueError otherwise).
   "idea-generation": [
     {

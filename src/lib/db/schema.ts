@@ -549,9 +549,66 @@ export type KvSetting = typeof kvSettings.$inferSelect;
 export type AuthConfig = typeof authConfig.$inferSelect;
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type Conversation = typeof conversations.$inferSelect;
+/**
+ * critiques — Critic Agent (#12) verdicts. The Critic reviews a producing
+ * agent's terminal output against the end goal and returns a binary verdict
+ * (serves|fails) plus, on fail, one actionable recommendation. iteration caps
+ * the review loop (ship-with-warning after MAX). strictness records the mode
+ * the verdict was rendered under.
+ */
+export const critiques = pgTable(
+  "critiques",
+  {
+    id:             serial("id").primaryKey(),
+    siteId:         integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    agentKey:       text("agent_key").notNull(),    // the agent whose output was reviewed
+    jobId:          integer("job_id"),
+    runId:          integer("run_id"),
+    endGoal:        text("end_goal"),
+    verdict:        text("verdict").notNull(),       // serves | fails
+    recommendation: text("recommendation"),          // single fix when verdict=fails
+    iteration:      integer("iteration").notNull().default(1),
+    strictness:     text("strictness").notNull().default("standard"), // loose|standard|pedantic
+    createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byAgent: index("critiques_agent_idx").on(t.agentKey),
+    bySite:  index("critiques_site_idx").on(t.siteId),
+    byJob:   index("critiques_job_idx").on(t.jobId),
+  }),
+);
+
+/**
+ * tactics — Tactics Scraper Agent (#13) knowledge rows. Each row is a
+ * marketing/SEO tactic distilled from a source (subreddit, HN, forum, blog, X,
+ * or a NotebookLM-derived video summary). Other agents read these during
+ * planning to ground recommendations in current community practice.
+ */
+export const tactics = pgTable(
+  "tactics",
+  {
+    id:         serial("id").primaryKey(),
+    siteId:     integer("site_id").references(() => sites.id, { onDelete: "cascade" }),
+    sourceUrl:  text("source_url").notNull(),
+    sourceType: text("source_type").notNull(),  // reddit|hn|forum|blog|x|other|notebooklm-derived
+    title:      text("title").notNull(),
+    body:       text("body").notNull(),
+    tags:       jsonb("tags").$type<string[]>(),
+    score:      real("score"),                  // source signal (upvotes, etc.) when available
+    addedBy:    text("added_by"),               // agent | operator
+    scrapedAt:  timestamp("scraped_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySource: index("tactics_source_idx").on(t.sourceType),
+    bySite:   index("tactics_site_idx").on(t.siteId),
+  }),
+);
+
 export type Message = typeof messages.$inferSelect;
 export type ResultCache = typeof resultCache.$inferSelect;
 export type Target = typeof targets.$inferSelect;
 export type TargetSnapshot = typeof targetSnapshots.$inferSelect;
 export type Checkpoint = typeof checkpoints.$inferSelect;
 export type DecisionRecord = typeof decisionRecords.$inferSelect;
+export type Critique = typeof critiques.$inferSelect;
+export type Tactic = typeof tactics.$inferSelect;
