@@ -43,13 +43,16 @@ export const AGENT_INPUTS: Record<string, AgentInputField[]> = {
     { name: "topic", label: "Topic", type: "text", placeholder: "e.g. B2B textile manufacturing — a buyer's guide" },
     { name: "keyword", label: "Primary keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
   ],
-  // Inline (fn) text linters — they operate on a pasted article, so the field is required.
+  // Inline (fn) text linters — paste an article OR leave it blank to review the
+  // live page (LO-04: a URL override, else the site's homepage).
   qa: [
-    { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste the draft to QA…", required: true },
+    { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste a draft, or leave blank to QA the live page…" },
+    { ...urlOverride, label: "…or live URL to QA (optional)" },
     { name: "targetKeyword", label: "Target keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
   ],
   "seo-optimization": [
-    { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste the draft to lint…", required: true },
+    { name: "article", label: "Article (markdown or text)", type: "textarea", placeholder: "Paste a draft, or leave blank to lint the live page…" },
+    { ...urlOverride, label: "…or live URL to lint (optional)" },
     { name: "targetKeyword", label: "Target keyword (optional)", type: "text", placeholder: "e.g. textile manufacturing" },
   ],
   critic: [

@@ -30,15 +30,14 @@ export type InlineRunner = (ctx: InlineRunnerContext) => Promise<InlineRunnerRes
 
 export const INLINE_RUNNERS: Record<string, InlineRunner> = {
   qa: async ({ payload }) => {
-    const article = String(payload.article ?? "").trim();
-    if (!article) throw new Error("qa requires 'article' in payload");
+    // LO-04: review the live page when no article is pasted but a url/site is.
+    const article = await resolveReviewText(payload, "qa");
     const targetKeyword = payload.targetKeyword ? String(payload.targetKeyword) : undefined;
     const result = validate({ article, targetKeyword });
     return { result: result as unknown as Record<string, unknown> };
   },
   "seo-optimization": async ({ payload }) => {
-    const article = String(payload.article ?? "").trim();
-    if (!article) throw new Error("seo-optimization requires 'article' in payload");
+    const article = await resolveReviewText(payload, "seo-optimization");
     const targetKeyword = payload.targetKeyword ? String(payload.targetKeyword) : undefined;
     const result = optimize({ article, targetKeyword });
     return { result: result as unknown as Record<string, unknown> };
@@ -144,4 +143,26 @@ export const INLINE_RUNNERS: Record<string, InlineRunner> = {
 
 export function hasInlineRunner(agentKey: string): boolean {
   return agentKey in INLINE_RUNNERS;
+}
+
+/**
+ * LO-04: resolve the text the QA / SEO-Optimization linters operate on. Prefers
+ * a pasted `article`; otherwise fetches the live page (url override or the
+ * site's homepage) and extracts its text — so these agents can run one-click
+ * against the live site like the audit agents do.
+ */
+async function resolveReviewText(payload: Record<string, unknown>, agentKey: string): Promise<string> {
+  const article = String(payload.article ?? "").trim();
+  if (article) return article;
+  const site = (payload.site ?? {}) as Record<string, unknown>;
+  const url = String(payload.url ?? site.domain ?? "").trim();
+  if (!url) {
+    throw new Error(`${agentKey} requires either an 'article' to review or a site/url to fetch`);
+  }
+  const { fetchPageText } = await import("@/lib/agents/page-text");
+  const text = await fetchPageText(url);
+  if (!text) {
+    throw new Error(`${agentKey}: could not fetch readable text from ${url}`);
+  }
+  return text;
 }

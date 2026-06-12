@@ -71,6 +71,11 @@ export function buildSearchAnalyticsBodyByQuery(range: DateRange, limit = 100): 
   return { startDate: range.startDate, endDate: range.endDate, dimensions: ["query"], rowLimit: limit };
 }
 
+/** LO-29c: searchAnalytics.query body broken down by page (URL). */
+export function buildSearchAnalyticsBodyByPage(range: DateRange, limit = 100): Record<string, unknown> {
+  return { startDate: range.startDate, endDate: range.endDate, dimensions: ["page"], rowLimit: limit };
+}
+
 export interface GscDailyPoint {
   day: string; // YYYY-MM-DD
   clicks: number;
@@ -81,6 +86,14 @@ export interface GscDailyPoint {
 
 export interface GscQueryRow {
   query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface GscPageRow {
+  page: string;
   clicks: number;
   impressions: number;
   ctr: number;
@@ -111,6 +124,20 @@ export function parseQueryRows(apiJson: unknown): GscQueryRow[] {
     .filter((r) => Array.isArray(r.keys) && typeof r.keys[0] === "string")
     .map((r) => ({
       query: r.keys![0],
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: r.ctr ?? 0,
+      position: r.position ?? 0,
+    }));
+}
+
+/** LO-29c: map a by-page response to page rows, preserving the API's click-sorted order. */
+export function parsePageRows(apiJson: unknown): GscPageRow[] {
+  const rows = (apiJson as { rows?: KeyedRow[] })?.rows ?? [];
+  return rows
+    .filter((r) => Array.isArray(r.keys) && typeof r.keys[0] === "string")
+    .map((r) => ({
+      page: r.keys![0],
       clicks: r.clicks ?? 0,
       impressions: r.impressions ?? 0,
       ctr: r.ctr ?? 0,
@@ -286,6 +313,22 @@ export async function fetchGscTopQueries(
   for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
     const json = await querySearchAnalytics(property, accessToken, body);
     if (json != null) return parseQueryRows(json);
+  }
+  return null;
+}
+
+/** LO-29c: top pages by clicks for the window, or null if GSC is unconfigured/unreachable. */
+export async function fetchGscTopPages(
+  cfg: GscConfig,
+  range: DateRange = gscDateRange(Date.now()),
+  limit = 100,
+): Promise<GscPageRow[] | null> {
+  const accessToken = await refreshAccessToken(cfg.refreshToken);
+  if (!accessToken) return null;
+  const body = buildSearchAnalyticsBodyByPage(range, limit);
+  for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
+    const json = await querySearchAnalytics(property, accessToken, body);
+    if (json != null) return parsePageRows(json);
   }
   return null;
 }

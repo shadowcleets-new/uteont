@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   gscDateRange, buildSearchAnalyticsBody, summarizeSearchAnalytics, buildConsentUrl, candidatePropertyUrls,
   buildSearchAnalyticsBodyByDate, buildSearchAnalyticsBodyByQuery, parseDailyRows, parseQueryRows,
+  buildSearchAnalyticsBodyByPage, parsePageRows,
 } from "./gsc";
 
 const DAY = 86_400_000;
@@ -109,6 +110,38 @@ describe("buildSearchAnalyticsBodyByQuery", () => {
       dimensions: ["query"],
       rowLimit: 50,
     });
+  });
+});
+
+describe("buildSearchAnalyticsBodyByPage (LO-29c)", () => {
+  it("requests per-page rows capped at the limit", () => {
+    const body = buildSearchAnalyticsBodyByPage({ startDate: "2026-01-01", endDate: "2026-01-28" }, 25);
+    expect(body).toMatchObject({
+      startDate: "2026-01-01",
+      endDate: "2026-01-28",
+      dimensions: ["page"],
+      rowLimit: 25,
+    });
+  });
+});
+
+describe("parsePageRows (LO-29c)", () => {
+  it("maps keyed rows to page rows, preserving API order", () => {
+    const rows = parsePageRows({
+      rows: [
+        { keys: ["https://site.test/a"], clicks: 20, impressions: 1000, ctr: 0.02, position: 3.1 },
+        { keys: ["https://site.test/b"], clicks: 5, impressions: 300, ctr: 0.016, position: 9.8 },
+      ],
+    });
+    expect(rows).toEqual([
+      { page: "https://site.test/a", clicks: 20, impressions: 1000, ctr: 0.02, position: 3.1 },
+      { page: "https://site.test/b", clicks: 5, impressions: 300, ctr: 0.016, position: 9.8 },
+    ]);
+  });
+
+  it("returns [] for empty/malformed payloads", () => {
+    expect(parsePageRows({})).toEqual([]);
+    expect(parsePageRows(null)).toEqual([]);
   });
 });
 
