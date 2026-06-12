@@ -8,6 +8,90 @@
 
 ---
 
+## 0. Implementation Reality — as of 2026-06-12
+
+> **Read this first.** The body below is the *aspirational* design. This section
+> is the ground truth: what is actually built on `main`, what diverges from the
+> spec, and the capabilities added since the spec was written. Where the two
+> conflict, this section wins.
+
+### 0.1 Corrections to the spec (now factually outdated)
+
+- **Queue substrate is Postgres, not Redis/BullMQ.** The reference stack line and
+  §3/§4.2 describe "Redis + BullMQ distributed queues". The implementation is a
+  Postgres-backed queue (`jobs` table; atomic claim via `SELECT … FOR UPDATE SKIP
+  LOCKED` in `src/lib/services/jobs.ts`). BullMQ/Redis remains the drop-in scale
+  upgrade, not a current dependency.
+- **Agent count is 16, not "10".** §2 says "10 agents". The registry
+  (`src/lib/agents/registry.ts`) has **16**: Research, Idea Generation, Content
+  Writing, QA/Validation, SEO Optimization, Technical SEO, Content Audit, Site
+  Crawl, Publishing, Backlink/Outreach, Performance Tracking, Revenue, Content
+  Brief, Content Draft, **Critic (#15)**, **Tactics Scraper (#16)**. Only
+  Publishing is `implemented: false`. Technical SEO / Performance Tracking /
+  Revenue are all implemented (deterministic `fn` runners).
+- **Job state machine has 4 states, not 13.** `jobs.status` is
+  `queued | claimed | done | failed`. The rich 13-state taxonomy and the
+  `job_events` append-only audit in §1/§4.4 are not built. The durability
+  contract that *is* real: atomic claim + **idempotent** `completeJob`
+  (guarded `UPDATE … WHERE status='claimed' RETURNING`) + exponential worker
+  backoff + `result_cache` dedup.
+- **Schema is a subset of the §4.1 DDL.** Built tables: sites, site_integrations,
+  cycles, runs, jobs, keywords, keyword_exclusions, ideas, articles, approvals,
+  notifications, agent_state, kv_settings, auth_config, login_attempts,
+  conversations, messages, result_cache, targets, target_snapshots, checkpoints,
+  decision_records, **critiques**, **tactics**. NOT built: campaigns, clusters,
+  pages, job_events, task_checkpoints, idempotency_keys, publish_receipts,
+  competitor_snapshots, content_bundles, metrics_timeseries.
+- **The "autonomous SEO engine" (Pillars 2–4, §5) is a credential-free shadow,
+  not the full engine.** `content-brief.ts` is the implemented realization of
+  semantic profiling + information-gain + coverage gaps — but it is lexical
+  (term/heading overlap on public HTML), not the embedding/NER/SERP-reverse-
+  engineering engine the spec describes. `ingestAndScoreTrends`,
+  `scrapeAndParseSerp`, `deployIdempotent`/`publish_receipts`,
+  `checkRankAndMaybeReoptimize`, and `recalibrateFromOutcomes` are **not built**.
+- **The UI is the warm-paper light theme only.** No working dark mode, no density
+  toggle, no 3-zone Mission Control / PipelineLadder / RAIL-R / StatusBar, no
+  DiffViewer / LogConsole / token-stream / one-click-undo. These remain the UI
+  backlog (see §0.3).
+
+### 0.2 Capabilities added since the spec (built, not in the body below)
+
+- **Critic Agent (#12 / #15 in registry).** Single-purpose reviewer: judges a
+  producing agent's output against the end goal, returns a **binary serves|fails**
+  verdict with one recommendation on fail; iteration cap 3 → ship-with-warning;
+  quota-aware (stands down under 10% of the daily Gemini budget). Auto-runs in
+  `applyJobResult`; strictness (loose/standard/pedantic) in kv_settings.
+  `src/lib/services/critic.ts`, table `critiques`.
+- **Tactics Scraper Agent (#13 / #16) + NotebookLM path.** Scrapes SEO/marketing
+  communities (Reddit/HN/forum/blog/X) and a NotebookLM browser session
+  (video→tactics, zero Gemini API calls) into a `tactics` knowledge base the
+  Director reads during planning. `worker/agents/tactics_scraper_agent`,
+  `worker/browser_automation/notebooklm_controller.py`, `src/lib/services/tactics.ts`.
+- **Director per-batch approval (audit A-07 / LO-55).** Execution requires an
+  explicit per-turn user "go"; a model-emitted `execute` without it is downgraded
+  to a proposal. Closes the sticky-auto-execute prompt-injection surface. Job
+  results + scraped content are fenced as `<UNTRUSTED_TOOL_OUTPUT>`.
+- **Autonomy levels L1–L4 (LO-20).** A guardrail envelope on top of approval:
+  L1 propose-only · L2 approval-required · L3 supervised-auto (low-blast agents
+  run automatically) · L4 full-auto. `src/lib/services/autonomy.ts`.
+- **Outreach domain allowlist (LO-58)**, **live QA/SEO mode (LO-04**, runs the
+  linters against a fetched live URL, SSRF-guarded**)**, **GSC per-page breakdown
+  (LO-29c)**, and a full **security-hardening pass** (constant-time secret
+  compares, IP-keyed login lockout, CSRF Origin checks, setup-token hashing,
+  idempotent job completion, generic error bodies — audit A-01…A-17).
+
+### 0.3 The honest "still to build" list
+
+Closed-loop re-optimization + the metrics_timeseries substrate it needs; the
+embedding/SERP-reverse-engineering intelligence engine; receipt-based idempotent
+publishing + CMS clients; campaigns/clusters; counterfactuals, diff-review, and
+one-click undo; and the full UI system (dark mode, density, Mission Control,
+DiffViewer, LogConsole, token-streaming, undo, reduced-motion + a shared motion
+vocabulary). The credential-gated integrations (GSC/GA4/Slack) are built but inert
+until the operator sets the secrets.
+
+---
+
 ## 1. Deep-Thinking Analysis
 
 <deep_thinking_analysis>
