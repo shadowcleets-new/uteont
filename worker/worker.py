@@ -129,11 +129,38 @@ def handle_outreach(payload: dict) -> dict:
     )
 
 
+def handle_tactics_scraper(payload: dict) -> dict:
+    # A video/podcast/Reel URL routes through NotebookLM (LO-63) — extraction
+    # happens entirely in the browser session, zero Gemini API calls.
+    nlm_url = str(payload.get("notebooklmUrl") or "").strip()
+    if nlm_url:
+        from pathlib import Path
+        from browser_automation.notebooklm_controller import extract_tactics
+        storage = os.environ.get("NOTEBOOKLM_STORAGE_STATE")
+        return extract_tactics(
+            nlm_url,
+            storage_state=Path(storage) if storage else None,
+            headless=True,
+            progress=lambda m: log.info("notebooklm: %s", m),
+        )
+
+    from agents.tactics_scraper_agent.tactics_agent import scrape
+    raw_sources = payload.get("sources")
+    if isinstance(raw_sources, str):
+        sources = [s.strip() for s in raw_sources.splitlines() if s.strip()]
+    elif isinstance(raw_sources, list):
+        sources = [str(s).strip() for s in raw_sources if str(s).strip()]
+    else:
+        sources = None  # fall back to the default communities
+    return scrape(sources=sources, progress=lambda m: log.info("tactics: %s", m))
+
+
 HANDLERS: dict[str, Callable[[dict], dict]] = {
     "research":         handle_research,
     "idea-generation":  handle_idea_generation,
     "content-writing":  handle_content_writing,
     "backlink":         handle_outreach,
+    "tactics-scraper":  handle_tactics_scraper,
 }
 
 

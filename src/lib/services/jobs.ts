@@ -216,6 +216,9 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
       await persistIdeas(input.cycleId, input.result);
     } else if (input.agentKey === "content-writing") {
       await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
+    } else if (input.agentKey === "tactics-scraper") {
+      const { tacticsFromResult, persistTactics } = await import("./tactics");
+      await persistTactics(input.siteId, tacticsFromResult(input.result), "agent");
     }
     // outreach/backlink: result captured in runs.result; no typed table v1.
   } catch (e) {

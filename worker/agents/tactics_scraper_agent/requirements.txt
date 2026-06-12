@@ -1,0 +1,3 @@
+# Reddit scraping is optional — the agent degrades to HN + HTML when praw or
+# REDDIT_CLIENT_ID/SECRET are absent. HN + generic HTML use only the stdlib.
+praw==7.8.1

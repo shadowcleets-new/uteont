@@ -87,6 +87,21 @@ export const AGENT_INPUTS: Record<string, AgentInputField[]> = {
       help: "Runs on the browser worker.",
     },
   ],
+  "tactics-scraper": [
+    {
+      name: "sources",
+      label: "Source URLs (one per line, optional)",
+      type: "textarea",
+      placeholder: "https://www.reddit.com/r/SEO/\nhttps://news.ycombinator.com/\n(blank = the 6 default communities)",
+      help: "Reddit / HN / forum / blog / X URLs. Runs on the browser worker.",
+    },
+    {
+      name: "notebooklmUrl",
+      label: "…or a video/podcast/Reel URL (NotebookLM)",
+      type: "url",
+      placeholder: "https://youtu.be/…  — extracted in a NotebookLM session, zero Gemini API",
+    },
+  ],
 };
 
 export function inputsForAgent(key: string): AgentInputField[] {
