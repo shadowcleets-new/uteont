@@ -405,24 +405,46 @@ export async function runDirectorTurn(
   // approval we downgrade the execute to a proposal and ask for confirmation.
   const userApprovedThisTurn = isApprovalMessage(input.newUserMessage);
   const wantsExecute = parsed.intent === "execute" && !!parsed.actions && parsed.actions.length > 0;
-  const downgradedForApproval = wantsExecute && !userApprovedThisTurn;
-  if (
-    wantsExecute &&
-    userApprovedThisTurn
-  ) {
-    const allowlist = await (async () => {
+  // LO-20: the operator's standing autonomy level decides how much the Director
+  // may run on its own. L3 auto-runs low-blast agents; L4 runs everything; L1/L2
+  // still need the per-batch go (LO-55). Read once per turn.
+  const [autonomyLevel, allowlist] = await Promise.all([
+    (async () => {
+      try {
+        const { getAutonomyLevel } = await import("./app-settings");
+        return await getAutonomyLevel();
+      } catch {
+        return "L2" as const;
+      }
+    })(),
+    (async () => {
       try {
         const { getOutreachAllowlist } = await import("./app-settings");
         return await getOutreachAllowlist();
       } catch {
         return [] as string[];
       }
-    })();
+    })(),
+  ]);
+  const { autonomyAllowsDispatch } = await import("./autonomy");
+  // The batch runs if ANY action is permitted by the autonomy envelope; each
+  // action is then individually gated below.
+  const anyDispatchable = wantsExecute && (parsed.actions ?? []).some((a) => {
+    const k = TOOL_TO_AGENT[a.tool];
+    return k && autonomyAllowsDispatch(autonomyLevel, k, userApprovedThisTurn);
+  });
+  const downgradedForApproval = wantsExecute && !anyDispatchable;
+  if (wantsExecute && anyDispatchable) {
     for (const action of parsed.actions!) {
       const agentKey = TOOL_TO_AGENT[action.tool];
       if (!agentKey) continue;
       if (!site) {
         console.warn("Director enqueue blocked: conversation has no site", input.conversation.id);
+        continue;
+      }
+      // LO-20: per-action autonomy gate.
+      if (!autonomyAllowsDispatch(autonomyLevel, agentKey, userApprovedThisTurn)) {
+        enqueued.push({ tool: action.tool, args: action.args, blocked: "autonomy-level" });
         continue;
       }
       // LO-58: cap outreach blast radius — skip targets not on the allowlist.
