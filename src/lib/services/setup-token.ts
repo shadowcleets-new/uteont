@@ -20,7 +20,8 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { authConfig } from "@/lib/db/schema";
 import { setPassword } from "./auth-config";
-import { safeEqual, sha256Hex } from "@/lib/crypto/constant-time";
+import { safeEqual } from "@/lib/crypto/constant-time";
+import { sha256Hex } from "@/lib/crypto/hash";
 
 const ROW_ID = 1;
 const TOKEN_BYTES = 32;
