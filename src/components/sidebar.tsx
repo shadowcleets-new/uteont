@@ -24,6 +24,9 @@ const SECTIONS: NavSection[] = [
       { label: "Dashboard", href: "/" },
       { label: "Sites", href: "/sites" },
       { label: "Targets", href: "/targets" },
+      { label: "Analytics", href: "/analytics" },
+      { label: "Pipeline", href: "/pipeline" },
+      { label: "Competitors", href: "/competitors" },
       { label: "Approvals", href: "/approvals" },
       { label: "Director (Chat)", href: "/chat" },
     ],
@@ -39,6 +42,7 @@ const SECTIONS: NavSection[] = [
     title: "DATA",
     items: [
       { label: "Keywords", href: "/keywords" },
+      { label: "Exclusions", href: "/exclusions" },
       { label: "Ideas", href: "/ideas" },
       { label: "Articles", href: "/articles" },
       { label: "Runs", href: "/runs" },

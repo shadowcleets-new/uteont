@@ -12,6 +12,8 @@ import {
   bumpHitCount,
 } from "./result-cache";
 import { logEvent } from "@/lib/observability/logger";
+import { listExclusionPhrases } from "./keyword-exclusions";
+import { filterKeywordRows } from "@/lib/agents/exclusion-filter";
 
 export interface EnqueueJobInput {
   agentKey: string;
@@ -57,6 +59,22 @@ export async function dispatchAgentJob(
 ): Promise<DispatchResult> {
   await assertAgentNotPaused(input.agentKey); // operator pause (Settings) blocks dispatch
   const payload: Record<string, unknown> = { ...input.payload };
+
+  // Closed-loop negative feedback: ride the site's exclusion list on every
+  // generative dispatch so the worker can inject a negative-constraint block.
+  // Injected before the dedupe key is computed so a changed exclusion list
+  // invalidates stale cached results. Best-effort — never blocks dispatch.
+  if (
+    (input.agentKey === "research" || input.agentKey === "idea-generation") &&
+    payload.exclusions === undefined
+  ) {
+    try {
+      const phrases = await listExclusionPhrases(input.siteId, 200);
+      if (phrases.length > 0) payload.exclusions = phrases;
+    } catch (e) {
+      console.warn("dispatchAgentJob: exclusion lookup failed; dispatching without", e);
+    }
+  }
 
   if (isDedupeEligible(input.agentKey) && !input.forceFresh) {
     const dedupeKey = computeDedupeKey(input.agentKey, input.siteId, payload);
@@ -375,7 +393,7 @@ async function persistResearchKeywords(
     source: string;
     priority_rank: number;
   };
-  const rows = (arr as Incoming[])
+  let rows = (arr as Incoming[])
     .filter((k) => k && typeof k.keyword === "string")
     .map((k) => ({
       siteId,
@@ -388,6 +406,29 @@ async function persistResearchKeywords(
       runId,
       status: "researched",
     }));
+  if (rows.length === 0) return;
+
+  // Ingestion-time enforcement of the exclusion list: deterministic lexical
+  // filter the LLM cannot ignore (the prompt-time negative block is advisory).
+  // The rejection trail is written back onto the run for human review.
+  // Best-effort — a lookup failure never drops research output.
+  try {
+    const phrases = await listExclusionPhrases(siteId, 500);
+    if (phrases.length > 0) {
+      const { allowed, rejected } = filterKeywordRows(rows, phrases);
+      if (rejected.length > 0) {
+        rows = allowed;
+        logEvent({ kind: "exclusion.filtered", siteId, agentKey: "research" });
+        await db
+          .update(runs)
+          .set({ result: { ...result, exclusionFilter: { rejectedCount: rejected.length, rejected } } })
+          .where(eq(runs.id, runId));
+      }
+    }
+  } catch (e) {
+    console.warn("persistResearchKeywords: exclusion filter failed; persisting unfiltered", e);
+  }
+
   if (rows.length === 0) return;
   await db.insert(keywords).values(rows);
 }

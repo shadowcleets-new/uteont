@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Conversation, Message } from "@/lib/db/schema";
 import { useActiveSite } from "@/lib/hooks/use-active-site";
+import { ChatInput } from "@/components/chat-input";
+import { TypingIndicator } from "@/components/typing-indicator";
 
 interface ChatViewProps {
   initialConversationId: number | null;
@@ -144,9 +146,23 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
     })();
   }, [conversationId]);
 
-  // Auto-scroll to bottom on new message
+  // Smart scroll: follow new messages only when the reader was already near
+  // the bottom BEFORE the new content rendered — don't yank them down while
+  // they're re-reading history. The pinned state is tracked from scroll
+  // events (not measured post-render, which a tall new message would break).
+  const pinnedRef = useRef(true);
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    // Opening/switching a conversation always lands on the latest message.
+    pinnedRef.current = true;
+  }, [conversationId]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (pinnedRef.current || history.length <= 1) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
   }, [history.length]);
 
   const sendMessage = async () => {
@@ -342,6 +358,10 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
         })()}
         <div
           ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+          }}
           className="flex-1 overflow-y-auto px-8 py-6"
         >
           {history.length === 0 ? (
@@ -351,11 +371,7 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
               {history.map((m) => (
                 <MessageBubble key={m.id} message={m} />
               ))}
-              {sending && (
-                <div className="text-[12px] text-[#9a988e] italic font-serif">
-                  Director is thinking…
-                </div>
-              )}
+              {sending && <TypingIndicator />}
             </div>
           )}
         </div>
@@ -391,32 +407,12 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
                 </select>
               </div>
             )}
-            <div className="flex gap-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
-                placeholder='e.g. "Get me to #2 ranking for shirts for young office goers in India"'
-                rows={2}
-                disabled={sending}
-                className="flex-1 rounded-md border border-[#cfccc1] px-3 py-2 text-[14px] focus:outline-none focus:border-[#d97757] resize-none"
-              />
-              <button
-                onClick={sendMessage}
-                disabled={sending || input.trim().length === 0}
-                className="self-end rounded-md bg-[#d97757] text-white px-5 py-2 text-[14px] font-medium hover:bg-[#c66948] disabled:bg-[#f3f1ea] disabled:text-[#9a988e] disabled:cursor-not-allowed transition-colors"
-              >
-                Send
-              </button>
-            </div>
-            <p className="text-[10px] text-[#9a988e] mt-1.5 font-serif italic">
-              Enter to send · Shift+Enter for newline
-            </p>
+            <ChatInput
+              value={input}
+              onChange={setInput}
+              onSubmit={sendMessage}
+              disabled={sending}
+            />
           </div>
         </div>
       </main>

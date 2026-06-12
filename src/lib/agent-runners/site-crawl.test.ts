@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeSiteStructure, type CrawlPage } from "./site-crawl";
+import { analyzeSiteStructure, isBlockedHost, type CrawlPage } from "./site-crawl";
 
 const U = "https://s.com";
 const page = (key: string, links: string[]): CrawlPage => ({ key, url: U + (key === "/" ? "/" : key), links });
@@ -56,5 +56,26 @@ describe("analyzeSiteStructure", () => {
     });
     expect(r.score).toBe(0);
     expect(r.crawled).toBe(0);
+  });
+});
+
+describe("isBlockedHost", () => {
+  it("blocks loopback, private ranges, link-local/metadata, and .local", () => {
+    for (const h of [
+      "localhost", "sub.localhost", "127.0.0.1", "127.8.9.1", "0.0.0.0",
+      "10.1.2.3", "192.168.0.10", "172.16.0.1", "172.31.255.255",
+      "169.254.169.254", "[::1]", "::1", "printer.local",
+    ]) {
+      expect(isBlockedHost(h), h).toBe(true);
+    }
+  });
+
+  it("allows public hosts and edge-of-range IPs", () => {
+    for (const h of [
+      "example.com", "competitor.io", "8.8.8.8", "172.15.0.1", "172.32.0.1",
+      "11.0.0.1", "192.169.0.1",
+    ]) {
+      expect(isBlockedHost(h), h).toBe(false);
+    }
   });
 });

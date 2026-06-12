@@ -29,6 +29,7 @@ import { SeoReport } from "./seo-report";
 import type { SeoResult } from "@/lib/agent-runners/seo-optimization";
 import { requiresPastedInput } from "@/lib/agents/run-inputs";
 import { LiveStatus } from "@/components/live-status";
+import { CostMeter } from "@/components/cost-meter";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,10 @@ export default async function AgentPage({ params }: PageProps) {
           <LiveStatus runningCount={stats.running} />
         </div>
       )}
+
+      {/* Drafting is the token-cost driver — surface the live projection
+          where the word-count decision is actually made. */}
+      {key === "content-draft" && <CostMeter />}
 
       <div className="flex gap-3 mb-6 items-center">
         <RunAgentButton agentKey={agent.key} disabled={!agent.implemented} />
