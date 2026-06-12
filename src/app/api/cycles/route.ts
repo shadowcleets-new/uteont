@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json({ cycles: rows });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     const row = await createCycle(parsed.goal, parsed.seedTerms, parsed.siteId);
     return NextResponse.json({ cycle: row }, { status: 201 });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

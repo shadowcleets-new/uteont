@@ -43,26 +43,37 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(creds) {
+      async authorize(creds, req) {
         const username = String(creds?.username ?? "");
         const password = String(creds?.password ?? "");
         if (!username || !password) return null;
 
         // F-009 + F-010: rate-limit + audit.
         // Lazy imports to keep the module Edge-compatible at the top level.
-        const { isLockedOut, recordAttempt } = await import(
+        const { isLockedOut, recordAttempt, parseClientIp } = await import(
           "@/lib/services/login-attempts"
         );
 
-        if (await isLockedOut()) {
-          await recordAttempt(username, false);
-          // Returning null produces a generic CredentialsSignin error —
-          // we don't tell attackers they hit a rate limit (less info leak).
+        // A-10: capture source IP + User-Agent for the audit trail and the
+        // IP-keyed limiter (A-03).
+        const headers = (req as Request | undefined)?.headers;
+        const ipAddress = parseClientIp(
+          headers?.get("x-forwarded-for"),
+          headers?.get("x-real-ip"),
+        );
+        const userAgent = headers?.get("user-agent") ?? null;
+        const meta = { ipAddress, userAgent };
+
+        if (await isLockedOut(ipAddress)) {
+          // A-03: do NOT record another failure while locked out — re-recording
+          // re-arms the window and would let an attacker keep the admin locked
+          // out indefinitely with one bad attempt per window.
+          // Returning null produces a generic CredentialsSignin error.
           return null;
         }
 
         const ok = await verifyCredentials(username, password);
-        await recordAttempt(username, ok);
+        await recordAttempt(username, ok, meta);
         if (!ok) return null;
         return {
           id: "admin",

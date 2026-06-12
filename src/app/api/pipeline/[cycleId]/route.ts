@@ -13,9 +13,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     const state = await getPipelineState(n);
     return NextResponse.json({ cycleId: n, state });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    console.error("[api] pipeline state failed", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

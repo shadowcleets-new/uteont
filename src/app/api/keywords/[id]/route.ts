@@ -21,6 +21,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
     return NextResponse.json({ keyword: row });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

@@ -13,7 +13,13 @@ import type { NextConfig } from "next";
  */
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // 'unsafe-inline' needed for Next.js hydration scripts
+  // A-06: 'unsafe-eval' dropped — Next.js 16 (Turbopack) production builds don't
+  // need it, and it was the part of the CSP that most undermined the XSS
+  // backstop. 'unsafe-inline' is retained because Next's hydration emits inline
+  // bootstrap scripts; a full per-request nonce + 'strict-dynamic' migration is
+  // the complete fix but must be verified against runtime hydration (deferred —
+  // tracked against A-06 in docs/AUDIT_2026-05-29.md).
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",

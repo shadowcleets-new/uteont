@@ -7,7 +7,8 @@ export async function GET() {
     const rows = await listApprovals();
     return NextResponse.json({ approvals: rows });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }
 
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
     const row = await recordApproval(parsed);
     return NextResponse.json({ approval: row }, { status: 201 });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

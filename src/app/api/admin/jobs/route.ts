@@ -47,6 +47,7 @@ export async function GET() {
       jobs: rows.map((r) => ({ ...r, error: r.error ? String(r.error).slice(0, 400) : null })),
     });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api] admin jobs failed", e);
+    return NextResponse.json({ ok: false, error: "internal server error" }, { status: 500 });
   }
 }

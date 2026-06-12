@@ -1,4 +1,4 @@
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
@@ -14,6 +14,11 @@ import {
 import { logEvent } from "@/lib/observability/logger";
 import { listExclusionPhrases } from "./keyword-exclusions";
 import { filterKeywordRows } from "@/lib/agents/exclusion-filter";
+
+/** A-17: hard cap on a persisted article body (chars). Mirrored in the
+ *  UpdateArticleRequest Zod schema so both the worker-result and PATCH paths
+ *  are bounded. */
+export const MAX_ARTICLE_BODY = 200_000;
 
 export interface EnqueueJobInput {
   agentKey: string;
@@ -330,14 +335,19 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
  */
 export async function completeJob(jobId: number, result: Record<string, unknown>) {
   const db = getDb();
-  const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
-  if (!job) return;
 
-  // 1. Mark job done
-  await db
+  // A-04: idempotent completion. Gate the transition on the job still being
+  // 'claimed' and only apply side-effects when THIS call actually flipped it to
+  // 'done'. A duplicate/late worker report (e.g. the complete HTTP call timed
+  // out after the server committed, so the worker retried) returns no row here
+  // and becomes a safe no-op — no second runs row, no re-persisted entities,
+  // no double notification.
+  const [job] = await db
     .update(jobs)
     .set({ status: "done", finishedAt: new Date(), result })
-    .where(eq(jobs.id, jobId));
+    .where(and(eq(jobs.id, jobId), eq(jobs.status, "claimed")))
+    .returning();
+  if (!job) return;
 
   // 2. Apply all result side-effects (identical to the pre-refactor behavior)
   const startedAt = (job.claimedAt as Date | null) ?? (job.createdAt as Date);
@@ -475,14 +485,16 @@ async function persistArticle(
   result: Record<string, unknown>,
 ) {
   const title = String(result.title ?? "").trim();
-  const body = String(result.body ?? "").trim();
+  // A-17: cap the body so a misbehaving worker/LLM can't bloat the DB with an
+  // unbounded article. Matches the UpdateArticleRequest.body Zod cap.
+  const body = String(result.body ?? "").trim().slice(0, MAX_ARTICLE_BODY);
   if (!title || !body) return;
   const db = getDb();
   await db.insert(articles).values({
     siteId,
     cycleId: cycleId ?? null,
     ideaId: typeof payload.ideaId === "number" ? (payload.ideaId as number) : null,
-    title,
+    title: title.slice(0, 500),
     slug: String(result.slug ?? title.toLowerCase().replace(/[^a-z0-9]+/g, "-")).slice(0, 200),
     body,
     metaTitle: result.metaTitle ? String(result.metaTitle).slice(0, 200) : null,
@@ -495,6 +507,12 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
   const db = getDb();
   const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   if (!row) return;
+  // A-04: never resurrect an already-completed job. If the worker's complete
+  // call committed server-side but its HTTP response timed out, the worker
+  // treats it as a failure and calls failJob(retry=true). Re-queuing a 'done'
+  // job would re-run it and duplicate its output — so a late fail on a done
+  // job is a no-op.
+  if (row.status === "done") return;
   const shouldRetry = retry && row.attempts < row.maxAttempts;
   await db
     .update(jobs)

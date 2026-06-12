@@ -1,17 +1,24 @@
-import { and, gte, lte, desc } from "drizzle-orm";
+import { and, gte, lte, inArray, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { keywords } from "@/lib/db/schema";
 import type { TabularPayload, ExportFilters } from "../types";
+import { parseExportDate } from "./keywords-filters";
 
 export async function fetchKeywordsPayload(
   filters: ExportFilters,
 ): Promise<TabularPayload> {
   const conditions = [];
-  if (filters.from) conditions.push(gte(keywords.createdAt, new Date(filters.from)));
-  if (filters.to) conditions.push(lte(keywords.createdAt, new Date(filters.to)));
-  // status filter is intentionally a no-op here — keywords table doesn't
-  // have a status column yet (will when approval flow lands). Carrying
-  // it in the API shape so the UI doesn't need to change later.
+  // A-11: validate dates (throws on malformed → API answers 400) instead of
+  // silently producing an empty export from an Invalid Date.
+  const from = parseExportDate(filters.from);
+  const to = parseExportDate(filters.to);
+  if (from) conditions.push(gte(keywords.createdAt, from));
+  if (to) conditions.push(lte(keywords.createdAt, to));
+  // A-11: apply the status filter now that keywords.status exists (it was a
+  // dead no-op while the column was missing).
+  if (filters.statuses?.length) {
+    conditions.push(inArray(keywords.status, filters.statuses));
+  }
 
   let rows: Array<typeof keywords.$inferSelect> = [];
   try {

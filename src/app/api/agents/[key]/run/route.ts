@@ -52,10 +52,16 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     });
     return NextResponse.json(result);
   } catch (e: unknown) {
+    // A-12: only surface the expected, non-sensitive messages (unknown agent /
+    // not implemented). Genericize everything else and log it server-side.
     const msg = e instanceof Error ? e.message : String(e);
-    const status = msg.includes("unknown agent") ? 404
-                 : msg.includes("not implemented") ? 501
-                 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    if (msg.includes("unknown agent")) {
+      return NextResponse.json({ error: msg }, { status: 404 });
+    }
+    if (msg.includes("not implemented")) {
+      return NextResponse.json({ error: msg }, { status: 501 });
+    }
+    console.error("[api] agent run failed", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

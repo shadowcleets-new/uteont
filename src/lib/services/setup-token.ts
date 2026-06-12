@@ -8,9 +8,11 @@
  *   4. Operator opens URL → password form → POST /api/setup
  *   5. consumeSetupToken(token, password) validates + invalidates + hashes
  *
- * Token is a high-entropy URL-safe string. Stored as-is (single-row,
- * single-token table — comparison is constant-time enough for a token
- * with 256 bits of entropy that's invalidated on first use).
+ * A-15: the token is a high-entropy URL-safe string but is stored as a
+ * SHA-256 HASH, never the raw value — so a DB/backup/log leak during the
+ * 10-min TTL can't be replayed into an account takeover. The plaintext is
+ * returned to the caller (for the URL) exactly once and never persisted.
+ * Comparison on consume is constant-time (A-08).
  */
 
 import { randomBytes } from "node:crypto";
@@ -18,6 +20,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { authConfig } from "@/lib/db/schema";
 import { setPassword } from "./auth-config";
+import { safeEqual, sha256Hex } from "@/lib/crypto/constant-time";
 
 const ROW_ID = 1;
 const TOKEN_BYTES = 32;
@@ -25,6 +28,7 @@ const TTL_MIN = 10;
 
 export async function issueSetupToken(): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(TOKEN_BYTES).toString("base64url");
+  const tokenHash = sha256Hex(token); // A-15: persist only the hash
   const expiresAt = new Date(Date.now() + TTL_MIN * 60_000);
 
   const db = getDb();
@@ -37,16 +41,17 @@ export async function issueSetupToken(): Promise<{ token: string; expiresAt: Dat
   if (existing.length > 0) {
     await db
       .update(authConfig)
-      .set({ setupToken: token, setupTokenExpiresAt: expiresAt, updatedAt: new Date() })
+      .set({ setupToken: tokenHash, setupTokenExpiresAt: expiresAt, updatedAt: new Date() })
       .where(eq(authConfig.id, ROW_ID));
   } else {
     await db.insert(authConfig).values({
       id: ROW_ID,
-      setupToken: token,
+      setupToken: tokenHash,
       setupTokenExpiresAt: expiresAt,
       updatedAt: new Date(),
     });
   }
+  // Return the plaintext to the caller for the one-time URL; it is never stored.
   return { token, expiresAt };
 }
 
@@ -64,7 +69,9 @@ export async function consumeSetupToken(token: string, password: string): Promis
   if (!row?.setupToken || !row.setupTokenExpiresAt) {
     throw new Error("No setup link is currently active. Request a new one via Telegram.");
   }
-  if (row.setupToken !== token) {
+  // A-08/A-15: compare the hash of the presented token against the stored hash
+  // in constant time.
+  if (!safeEqual(row.setupToken, sha256Hex(token))) {
     throw new Error("This setup link is invalid.");
   }
   const expiresAt = new Date(row.setupTokenExpiresAt as unknown as string);

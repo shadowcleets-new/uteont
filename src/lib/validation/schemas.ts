@@ -61,7 +61,8 @@ export const UpdateIdeaRequest = z.object({
 
 export const UpdateArticleRequest = z.object({
   title:           z.string().min(1).max(500).optional(),
-  body:            z.string().optional(),
+  body:            z.string().max(200_000).optional(), // A-17: bound body size
+
   metaTitle:       z.string().max(160).optional(),
   metaDescription: z.string().max(500).optional(),
   status: z.enum([

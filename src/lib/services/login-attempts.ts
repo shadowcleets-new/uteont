@@ -1,18 +1,38 @@
 /**
  * Login attempt tracking + rate limiting (mitigates F-009 and F-010).
  *
- * Every credentials sign-in attempt writes a row. New attempts are
- * blocked if there have been MAX_FAILURES failures in the trailing
- * WINDOW_MIN minutes from any source (single-user app, so we don't
- * key on IP — the whole login path is throttled).
+ * Every credentials sign-in attempt writes a row. A-03: the lockout is keyed
+ * by SOURCE IP — MAX_FAILURES_PER_IP failures from one IP in the trailing
+ * window locks that IP only, so an anonymous attacker can no longer lock the
+ * legitimate admin out of their own console. A generous MAX_FAILURES_GLOBAL
+ * backstop still trips on a genuine distributed flood. When no IP is known
+ * (header stripped) we fall back to the global counter.
  */
 
 import { and, count, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { loginAttempts } from "@/lib/db/schema";
 
-const MAX_FAILURES_PER_WINDOW = 10;
+const MAX_FAILURES_PER_IP = 10;
+const MAX_FAILURES_GLOBAL = 50;
 const WINDOW_MIN = 15;
+
+/**
+ * Extract the client IP from forwarding headers. x-forwarded-for is a
+ * comma-separated hop list; the first entry is the original client. Pure +
+ * testable (A-10).
+ */
+export function parseClientIp(
+  forwardedFor: string | null | undefined,
+  realIp: string | null | undefined,
+): string | null {
+  if (forwardedFor) {
+    const first = forwardedFor.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  if (realIp && realIp.trim()) return realIp.trim();
+  return null;
+}
 
 export async function recordAttempt(
   username: string,
@@ -34,14 +54,31 @@ export async function recordAttempt(
 }
 
 /**
- * Returns true if the login path is currently rate-limited
- * (i.e. >= MAX_FAILURES_PER_WINDOW failures in the last WINDOW_MIN minutes).
+ * Returns true if sign-in is currently rate-limited for this source. A-03:
+ * keyed by IP (MAX_FAILURES_PER_IP) so one attacker can't lock out the admin;
+ * a global backstop (MAX_FAILURES_GLOBAL) still trips on a distributed flood.
+ * When ipAddress is null (header stripped) only the global counter applies.
  */
-export async function isLockedOut(): Promise<boolean> {
+export async function isLockedOut(ipAddress?: string | null): Promise<boolean> {
   try {
     const db = getDb();
     const since = new Date(Date.now() - WINDOW_MIN * 60_000);
-    const [row] = await db
+
+    if (ipAddress) {
+      const [perIp] = await db
+        .select({ n: count() })
+        .from(loginAttempts)
+        .where(
+          and(
+            eq(loginAttempts.success, false),
+            eq(loginAttempts.ipAddress, ipAddress),
+            gte(loginAttempts.createdAt, since),
+          ),
+        );
+      if ((perIp?.n ?? 0) >= MAX_FAILURES_PER_IP) return true;
+    }
+
+    const [global] = await db
       .select({ n: count() })
       .from(loginAttempts)
       .where(
@@ -50,7 +87,7 @@ export async function isLockedOut(): Promise<boolean> {
           gte(loginAttempts.createdAt, since),
         ),
       );
-    return (row?.n ?? 0) >= MAX_FAILURES_PER_WINDOW;
+    return (global?.n ?? 0) >= MAX_FAILURES_GLOBAL;
   } catch (e) {
     console.warn("[login-attempts] failed to check lockout", e);
     return false; // fail-open on DB error (don't lock everyone out)
@@ -75,6 +112,7 @@ export async function purgeOldAttempts(): Promise<number> {
 }
 
 export const RATE_LIMIT_INFO = {
-  maxFailures: MAX_FAILURES_PER_WINDOW,
+  maxFailuresPerIp: MAX_FAILURES_PER_IP,
+  maxFailuresGlobal: MAX_FAILURES_GLOBAL,
   windowMinutes: WINDOW_MIN,
 };

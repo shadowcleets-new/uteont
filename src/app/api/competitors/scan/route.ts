@@ -53,10 +53,8 @@ export async function POST(req: NextRequest) {
       siteId,
     });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    console.error("[api] competitor scan: run setup failed", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 
   try {
@@ -77,8 +75,10 @@ export async function POST(req: NextRequest) {
       issueCount: result.issues.length,
     });
   } catch (e) {
+    // A-12: keep the detailed reason in the run record (server-side) but return
+    // a generic message to the client.
     const msg = e instanceof Error ? e.message : String(e);
     await finishRun({ runId: runRow.id, status: "failure", error: msg }).catch(() => undefined);
-    return NextResponse.json({ error: msg }, { status: 502 });
+    return NextResponse.json({ error: "the crawl failed — see the run record for details" }, { status: 502 });
   }
 }

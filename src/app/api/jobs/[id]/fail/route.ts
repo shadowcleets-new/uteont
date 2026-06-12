@@ -19,6 +19,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     await failJob(n, parsed.error, parsed.retry);
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

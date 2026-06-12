@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     );
     return NextResponse.json({ runs: rows });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    console.error("[api]", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

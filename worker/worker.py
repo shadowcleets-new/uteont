@@ -179,9 +179,13 @@ def _start_health_server(port: int = 8080) -> None:
             self.send_response(404); self.end_headers()
 
     def _run():
+        # A-16: bind localhost by default so the unauthenticated /health counters
+        # snapshot isn't exposed on every interface. If the platform's health
+        # probe is external (e.g. Railway), opt in with WORKER_HEALTH_HOST=0.0.0.0.
+        host = os.environ.get("WORKER_HEALTH_HOST", "127.0.0.1")
         try:
-            with socketserver.TCPServer(("0.0.0.0", port), _Handler) as srv:
-                log.info("health server listening on :%d/health", port)
+            with socketserver.TCPServer((host, port), _Handler) as srv:
+                log.info("health server listening on %s:%d/health", host, port)
                 srv.serve_forever()
         except Exception as e:
             log.warning("health server failed to start: %s", e)
@@ -241,11 +245,14 @@ def main() -> int:
             _health_state["jobs_failed"] += 1
             continue
 
+        # A-04: run the handler and report completion as SEPARATE steps. Only a
+        # handler exception should mark the job failed + retry. A failure to
+        # REPORT a successful completion must NOT call fail_job — the server may
+        # have already committed the result, and re-queuing would duplicate the
+        # work. (The server's completeJob is idempotent too, so a later retry is
+        # a safe no-op.)
         try:
             result = handler(payload)
-            client.complete_job(job_id, result)
-            log.info("job %d done", job_id)
-            _health_state["jobs_completed"] += 1
         except Exception as e:
             log.exception("job %d failed", job_id)
             _health_state["jobs_failed"] += 1
@@ -262,6 +269,19 @@ def main() -> int:
             # immediately re-pull this job (it's now back to status=queued
             # via fail_job retry=True).
             time.sleep(backoff_s)
+            continue
+
+        try:
+            client.complete_job(job_id, result)
+            log.info("job %d done", job_id)
+            _health_state["jobs_completed"] += 1
+        except ApiError as e:
+            # Handler succeeded; only the completion report failed. Do NOT
+            # fail_job (that would resurrect a possibly-committed job). The
+            # job stays 'claimed' and a reclaim re-reports completion, which
+            # the idempotent server collapses to a no-op.
+            log.error("job %d completed but the completion report failed: %s", job_id, e)
+            _health_state["jobs_completed"] += 1
 
     log.info("worker exiting cleanly")
     return 0

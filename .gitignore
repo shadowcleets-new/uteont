@@ -58,3 +58,4 @@ drizzle/.cache/
 
 .vercel
 .env*.local
+.claude/analysis/

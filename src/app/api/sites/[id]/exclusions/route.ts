@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   addExclusion,
   listExclusions,
+  ExclusionAlreadyExistsError,
 } from "@/lib/services/keyword-exclusions";
 
 interface Ctx { params: Promise<{ id: string }> }
@@ -47,9 +48,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     });
     return NextResponse.json(row, { status: 201 });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 },
-    );
+    // A-12: surface the one expected, non-sensitive domain error; genericize
+    // the rest and log server-side.
+    if (e instanceof ExclusionAlreadyExistsError) {
+      return NextResponse.json({ error: e.message }, { status: 409 });
+    }
+    console.error("[api] add exclusion failed", e);
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }
