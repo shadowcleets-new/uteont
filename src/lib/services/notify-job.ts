@@ -6,7 +6,7 @@
  * services/telegram.ts.sendMessage already handles that gracefully.
  */
 
-import { sendMessage, type InlineButton } from "./telegram";
+import { sendMessage, escapeMarkdown, type InlineButton } from "./telegram";
 import { queueNotification, markFailed, markSent } from "./notifications";
 
 const BASE_URL =
@@ -32,8 +32,8 @@ export async function notifyJobFailure(
   error: string,
 ): Promise<void> {
   const text =
-    `❌ *${escapeMd(agentKey)}* failed\n\n` +
-    `Error: \`${escapeMd(error.slice(0, 250))}\`\n\n` +
+    `❌ *${escapeMarkdown(agentKey)}* failed\n\n` +
+    `Error: \`${escapeMarkdown(error.slice(0, 250))}\`\n\n` +
     `[View runs](${BASE_URL}/runs?subject=${encodeURIComponent("agent." + agentKey)})`;
   await dispatch(
     "error",
@@ -98,7 +98,7 @@ function buildSuccessMessage(
       const topList = Array.isArray(result.top_keywords)
         ? (result.top_keywords as unknown[]).slice(0, 3).map(String)
         : [];
-      const top = topList.length ? `\nTop: _${escapeMd(topList.join(", "))}_` : "";
+      const top = topList.length ? `\nTop: _${escapeMarkdown(topList.join(", "))}_` : "";
       return {
         text:
           `🔍 *Research completed* (job ${jobId})\n\n` +
@@ -128,7 +128,7 @@ function buildSuccessMessage(
       return {
         text:
           `✍️ *Article drafted* (job ${jobId})\n\n` +
-          `Title: *${escapeMd(title)}*\nWords: ${wc}\n\n` +
+          `Title: *${escapeMarkdown(title)}*\nWords: ${wc}\n\n` +
           `[Review draft](${BASE_URL}/runs?subject=${encodeURIComponent("agent.content-writing")})`,
         buttons: [[{ text: "Open drafts", callbackData: `open:articles` }]],
       };
@@ -138,7 +138,7 @@ function buildSuccessMessage(
       return {
         text:
           `📨 *Outreach draft ready* (job ${jobId})\n\n` +
-          `For: ${escapeMd(site)}\n\n` +
+          `For: ${escapeMarkdown(site)}\n\n` +
           `[Review outreach](${BASE_URL}/runs?subject=${encodeURIComponent("agent.backlink")})`,
         buttons: [[{ text: "Open outreach", callbackData: `open:outreach` }]],
       };
@@ -167,13 +167,8 @@ function buildSuccessMessage(
     default:
       return {
         text:
-          `✅ *${escapeMd(agentKey)}* completed (job ${jobId})\n\n` +
+          `✅ *${escapeMarkdown(agentKey)}* completed (job ${jobId})\n\n` +
           `[View runs](${BASE_URL}/runs)`,
       };
   }
-}
-
-// Telegram Markdown escape — only the chars that break parsing.
-function escapeMd(s: string): string {
-  return s.replace(/([_*`\[\]])/g, "\\$1");
 }

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { keywords, ideas, articles } from "@/lib/db/schema";
-import { answerCallbackQuery, sendMessage } from "@/lib/services/telegram";
+import { keywords, ideas, articles, runs } from "@/lib/db/schema";
+import { selectTopKeywordIds } from "@/lib/services/keyword-approval";
+import { answerCallbackQuery, sendMessage, escapeMarkdown } from "@/lib/services/telegram";
 import { recordApproval } from "@/lib/services/approvals";
 import { listSites, getSiteByKey } from "@/lib/services/sites";
 import {
@@ -50,6 +51,18 @@ export async function POST(req: NextRequest) {
     const message = cb.message as Record<string, unknown> | undefined;
     const chat = message?.chat as Record<string, unknown> | undefined;
     const chatId = chat ? String(chat.id) : undefined;
+    const from = cb.from as Record<string, unknown> | undefined;
+    const fromId = from ? String(from.id) : undefined;
+
+    // A-01: the callback path mutates business state (approve keywords/ideas/
+    // articles, write approval-audit rows) but previously had NO authorization —
+    // it trusted only the shared webhook secret. Gate it on the admin chat AND
+    // the clicking user, like the slash-command and Director paths already are.
+    const adminChatId = await getAdminChatId();
+    if (!adminChatId || (chatId !== adminChatId && fromId !== adminChatId)) {
+      await answerCallbackQuery(cb.id, "Not authorized.");
+      return NextResponse.json({ ok: true, handled: "callback_query", authorized: false });
+    }
 
     let ackText = "Received";
     try {
@@ -62,7 +75,9 @@ export async function POST(req: NextRequest) {
     if (chatId) {
       await sendMessage({
         chatId,
-        text: `_Action:_ \`${data}\`\n${ackText}`,
+        // A-13: `data` is attacker-influenceable callback content — escape it so
+        // backticks/underscores can't break Markdown parsing (→ 400, silent drop).
+        text: `_Action:_ \`${escapeMarkdown(data)}\`\n${ackText}`,
         parseMode: "Markdown",
       });
     }
@@ -379,36 +394,32 @@ async function handleCallback(data: string): Promise<string> {
 
 async function approveTopKeywordsForJob(jobId: number, n: number): Promise<string> {
   const db = getDb();
-  // Find keywords inserted by the runs row that this job produced (we
-  // linked keywords.runId in completeJob).
-  const list = await db
-    .select()
+
+  // A-05: scope to the run THIS job produced (runs.jobId === jobId), so the
+  // operator approves keywords from the run they were looking at — not the
+  // global researched pool.
+  const [run] = await db
+    .select({ id: runs.id })
+    .from(runs)
+    .where(eq(runs.jobId, jobId))
+    .orderBy(desc(runs.id))
+    .limit(1);
+  if (!run) return "No run found for that job.";
+
+  const candidates = await db
+    .select({ id: keywords.id, priorityRank: keywords.priorityRank })
     .from(keywords)
-    .where(eq(keywords.status, "researched"))
-    .orderBy(desc(keywords.priorityRank))
-    .limit(500);
-  const top = list
-    .sort((a, b) => a.priorityRank - b.priorityRank)
-    .slice(0, n);
-  if (top.length === 0) return "No researched keywords to approve.";
+    .where(and(eq(keywords.status, "researched"), eq(keywords.runId, run.id)));
+
+  // A-05: priorityRank 1 = best; select the n BEST, with n clamped to [1, 50].
+  const ids = selectTopKeywordIds(candidates, n);
+  if (ids.length === 0) return "No researched keywords to approve.";
+
   await db
     .update(keywords)
     .set({ status: "approved", approvedAt: new Date() })
-    .where(
-      eq(
-        keywords.id,
-        // simulate IN via repeated calls — keep it tiny here for n<=20
-        top[0].id,
-      ),
-    );
-  // Loop for the rest (Drizzle's `inArray` would be cleaner; using simple loop for clarity)
-  for (let i = 1; i < top.length; i++) {
-    await db
-      .update(keywords)
-      .set({ status: "approved", approvedAt: new Date() })
-      .where(eq(keywords.id, top[i].id));
-  }
-  return `Approved ${top.length} keyword(s).`;
+    .where(inArray(keywords.id, ids));
+  return `Approved ${ids.length} keyword(s).`;
 }
 
 async function applyKeywordDecision(id: number, status: "approved" | "shelved") {

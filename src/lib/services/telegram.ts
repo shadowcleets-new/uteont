@@ -6,6 +6,15 @@
  * the system works before Telegram is configured.
  */
 
+/**
+ * Telegram Markdown escape — backslash-escapes only the chars that break
+ * parsing (`_ * \` [ ]`). Use on any attacker- or user-influenced text that
+ * lands in a `parseMode: "Markdown"` message (A-13).
+ */
+export function escapeMarkdown(s: string): string {
+  return s.replace(/([_*`[\]])/g, "\\$1");
+}
+
 export interface InlineButton {
   text: string;
   callbackData: string;
