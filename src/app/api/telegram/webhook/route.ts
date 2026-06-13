@@ -56,10 +56,13 @@ export async function POST(req: NextRequest) {
 
     // A-01: the callback path mutates business state (approve keywords/ideas/
     // articles, write approval-audit rows) but previously had NO authorization —
-    // it trusted only the shared webhook secret. Gate it on the admin chat AND
-    // the clicking user, like the slash-command and Director paths already are.
+    // it trusted only the shared webhook secret. Gate it EXACTLY like the
+    // slash-command path: the callback must originate in the admin chat. (An OR
+    // with the clicking user's id is weaker — it would accept a click from the
+    // admin's user id in some other chat — so we require the admin chat itself.)
     const adminChatId = await getAdminChatId();
-    if (!adminChatId || (chatId !== adminChatId && fromId !== adminChatId)) {
+    void fromId; // captured for logging; authorization is on the chat id
+    if (!adminChatId || chatId !== adminChatId) {
       await answerCallbackQuery(cb.id, "Not authorized.");
       return NextResponse.json({ ok: true, handled: "callback_query", authorized: false });
     }
@@ -177,6 +180,11 @@ async function approveDirectorPlan(conversationId: number): Promise<string> {
   const { getDirectorContext, getConversation } = await import("@/lib/services/conversations");
   const conversation = await getConversation(conversationId);
   if (!conversation) return "Conversation not found.";
+  // Scope: only approve plans for Telegram-surface conversations from this bot —
+  // never let a callback drive a web-only conversation's dispatch.
+  if (conversation.surface !== "telegram" && conversation.surface !== "both") {
+    return "That plan isn't a Telegram conversation.";
+  }
   const { summary, recent } = await getDirectorContext(conversationId);
   const { response } = await runDirectorTurn({
     conversation,

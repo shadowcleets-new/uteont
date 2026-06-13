@@ -50,6 +50,11 @@ export function summarizeAttention(input: {
       needsYou++;
     } else if (sev === "attention") {
       needsYou++;
+    } else if (cp.status === "approved" || cp.status === "rejected" || cp.status === "edited") {
+      // A decided checkpoint is finished work — count it toward `done` so the
+      // contract holds for callers that pass mixed-status checkpoints (the
+      // dashboard passes pending-only today, which masked this).
+      done++;
     }
   }
   for (const r of input.runs) {

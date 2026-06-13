@@ -63,5 +63,8 @@ export function computeCounterfactual(input: CounterfactualInput): Counterfactua
   const slopePerMs = dt === 0 ? 0 : (b.v - a.v) / dt;
   const valueAtDeadline = a.v + slopePerMs * (input.deadlineMs - a.t);
 
-  return { valueAtDeadline, fromMs: a.t, fromValue: a.v };
+  // Anchor the ghost at the window START (like the flat branch), extrapolating
+  // the same slope back so the line spans the full window consistently.
+  const fromValue = a.v + slopePerMs * (input.startMs - a.t);
+  return { valueAtDeadline, fromMs: input.startMs, fromValue };
 }

@@ -70,10 +70,22 @@ describe("isBlockedHost", () => {
     }
   });
 
+  it("blocks IPv6 link-local, unspecified, and IPv4-mapped internal IPs (review)", () => {
+    for (const h of [
+      "fe80::1", "[fe80::1]",            // IPv6 link-local
+      "::",                                // IPv6 unspecified
+      "::ffff:127.0.0.1",                 // IPv4-mapped loopback
+      "::ffff:169.254.169.254",           // IPv4-mapped cloud metadata
+      "::ffff:10.0.0.1",                  // IPv4-mapped RFC-1918
+    ]) {
+      expect(isBlockedHost(h), h).toBe(true);
+    }
+  });
+
   it("allows public hosts and edge-of-range IPs", () => {
     for (const h of [
       "example.com", "competitor.io", "8.8.8.8", "172.15.0.1", "172.32.0.1",
-      "11.0.0.1", "192.169.0.1",
+      "11.0.0.1", "192.169.0.1", "2606:4700:4700::1111", // public IPv6 (Cloudflare)
     ]) {
       expect(isBlockedHost(h), h).toBe(false);
     }

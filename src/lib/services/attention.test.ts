@@ -32,7 +32,7 @@ describe("summarizeAttention (LO-21 quiet-by-default)", () => {
     });
     expect(s.needsYou).toBe(3); // 2 pending checkpoints + 1 failed run
     expect(s.critical).toBe(1); // the high-blast pending checkpoint
-    expect(s.done).toBe(2); // 2 successful runs
+    expect(s.done).toBe(3); // 2 successful runs + 1 decided (approved) checkpoint
   });
 
   it("is calm when nothing needs attention", () => {

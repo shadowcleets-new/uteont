@@ -102,8 +102,10 @@ export async function runReoptimizationScan(siteId: number, fallbackProperty?: s
   const current = await fetchGscTopPages(cfg, gscDateRange(now, 28)).catch(() => null);
   if (!current || current.length === 0) return 0;
 
-  // Prior window: the 28 days before the current one (offset the range end).
-  const priorRange = gscDateRange(now - 28 * 86_400_000, 28);
+  // Prior window: the 28 days immediately BEFORE the current one, with no shared
+  // boundary day. Current is [now-28d, now]; offsetting by 29 days makes prior
+  // [now-57d, now-29d], so the two windows are strictly adjacent, not overlapping.
+  const priorRange = gscDateRange(now - 29 * 86_400_000, 28);
   const priorRows = (await fetchGscTopPages(cfg, priorRange).catch(() => null)) ?? [];
   const prior: Record<string, GscPageRow> = {};
   for (const r of priorRows) prior[r.page] = r;

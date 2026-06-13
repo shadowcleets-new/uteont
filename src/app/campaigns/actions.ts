@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createCampaign, createCluster, updateCampaignStatus } from "@/lib/services/campaigns";
+import { createCampaign, createCluster, getCampaign, updateCampaignStatus } from "@/lib/services/campaigns";
 import { listSites } from "@/lib/services/sites";
 import { getKvSetting } from "@/lib/services/app-settings";
 
@@ -41,7 +41,18 @@ export async function createClusterAction(formData: FormData): Promise<void> {
     .split(/[\n,]/)
     .map((k) => k.trim())
     .filter(Boolean);
-  const siteId = await resolveSiteId();
+
+  // When the cluster belongs to a campaign, its site MUST be the campaign's site
+  // — not the (possibly different) active site — or the cluster would be filed
+  // under the wrong site. Fall back to the active site only for loose clusters.
+  let siteId: number | null;
+  if (campaignId) {
+    const campaign = await getCampaign(campaignId).catch(() => null);
+    if (!campaign) return;
+    siteId = campaign.siteId;
+  } else {
+    siteId = await resolveSiteId();
+  }
   if (!siteId) return;
   await createCluster({ siteId, campaignId, name, intent, keywords });
   revalidatePath(campaignId ? `/campaigns/${campaignId}` : "/campaigns");

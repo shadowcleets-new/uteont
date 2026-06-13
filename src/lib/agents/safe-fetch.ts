@@ -28,7 +28,20 @@ const MAX_REDIRECTS = 4;
 export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return true;
-  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd")) return true; // IPv6 loopback + ULA
+
+  // IPv6 internal ranges. Includes IPv4-mapped (::ffff:a.b.c.d), which must be
+  // un-wrapped and re-checked against the IPv4 ranges below — otherwise
+  // ::ffff:169.254.169.254 (cloud metadata) would slip through.
+  if (h.includes(":")) {
+    if (h === "::" || h === "::1") return true;                 // unspecified + loopback
+    if (h.startsWith("fc") || h.startsWith("fd")) return true;  // unique-local (ULA)
+    if (h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb"))
+      return true; // link-local fe80::/10
+    const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(h);
+    if (mapped) return isBlockedHost(mapped[1]); // re-check the embedded IPv4
+    return false; // some other IPv6 — treat as public
+  }
+
   const ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
   if (!ip) return false;
   const [a, b] = [Number(ip[1]), Number(ip[2])];
@@ -58,6 +71,13 @@ export function resolveRedirectUrl(location: string, baseUrl: string): string | 
  * Throw if the hostname — or any IP it resolves to — is non-public. A DNS
  * lookup failure is NOT treated as blocked (the resolver may be flaky / the
  * host may genuinely not exist; the fetch then fails naturally).
+ *
+ * Residual limitation (accepted under the single-operator threat model): this
+ * resolves the host and checks the IPs, but the subsequent fetch() resolves the
+ * host AGAIN, so a host that rebinds between the two lookups could still connect
+ * to an internal IP (a TOCTOU). Fully closing it needs socket pinning to the
+ * validated IP, which fetch() doesn't expose in this runtime. The redirect-hop
+ * re-validation + IP check already defeat the common static-redirect SSRF.
  */
 export async function assertPublicHost(hostname: string): Promise<void> {
   if (isBlockedHost(hostname)) {
