@@ -3,6 +3,42 @@
 > Structured session journal. Keep the last 15 entries here; archive older
 > ones under `.claude/history/`.
 
+## [2026-06-13 08:50:00] - Session quirky-raman-4a890e (design completion)
+### 1. Intent, Roles, & Context
+- **The Problem:** Add everything from the 3 parked docs (design, backlog,
+  audit) to the project — update stale code to current main, build the
+  left-out features naturally, update the design doc, then a UI/UX pass last.
+- **Specialist Personas Invoked:** Principal Security Auditor; Agent-Platform
+  Architect; Worker/Playwright Engineer; Release Engineer; CXO/UX for the pass.
+- **The Strategy:** Verify all 3 docs against current main first (workflow
+  fleet), then build in dependency order — security fixes → new agents →
+  director hardening → automations → doc → UI — each TDD'd on pure logic and
+  build-verified (DB unreachable, so no live-DB tests).
+
+### 2. Surgical Technical Modifications
+- **Branch:** `feature/design-completion` (13 commits off `main` 1c8c097).
+- **Security:** ported audit A-01..A-17 onto main (callback authz, idempotent
+  job completion + worker restructure, IP-keyed lockout, constant-time edge-safe
+  compares, CSRF Origin check, token hashing, generic errors, body caps, CSP).
+- **New agents:** Critic (#15) + critiques table; Tactics Scraper (#16) +
+  NotebookLM controller + tactics table; migration 0012 (idempotent, staged).
+- **Director:** per-batch approval (A-07/LO-55), outreach allowlist (LO-58),
+  autonomy L1–L4 (LO-20), tactics-grounded planning.
+- **Also:** live QA/SEO mode (LO-04), per-page GSC (LO-29c), Claude Code
+  automations (LO-74..81), settings controls + /tactics page + reduced-motion,
+  design-doc §0 reality section.
+- **Irreversible Actions:** none — migration 0012 staged, not applied.
+
+### 3. Verification & Validation
+- **Commands:** 88 new pure unit tests (vitest) green; `tsc --noEmit`, `eslint`,
+  `next build` all green across every commit. `python -m py_compile` on the
+  worker modules. Inline self-review fixed 2 real bugs (L1 downgrade loop;
+  worker job-stranding).
+- **Resulting App State:** trunk-ready; new features inert where they need
+  operator secrets / the worker host; everything else live on merge.
+- **Next Sprint Phase:** re-run the adversarial-review fleet (rate-limited),
+  apply 0012 to Neon, squash-merge.
+
 ## [2026-06-12 09:15:00] - Session quirky-raman-4a890e (trunk integration)
 ### 1. Intent, Roles, & Context
 - **The Problem:** Land the completed 8-feature pensive→main port
