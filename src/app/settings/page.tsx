@@ -2,7 +2,30 @@ import Link from "next/link";
 import { AGENTS } from "@/lib/agents/registry";
 import { pausedAgentKeys } from "@/lib/services/agent-state";
 import { pickModel, type ModelTask } from "@/lib/services/model-router";
-import { pauseAgentAction } from "./actions";
+import {
+  getCriticStrictness,
+  getAutonomyLevel,
+  getOutreachAllowlist,
+} from "@/lib/services/app-settings";
+import {
+  pauseAgentAction,
+  setCriticStrictnessAction,
+  setAutonomyLevelAction,
+  setOutreachAllowlistAction,
+} from "./actions";
+
+const STRICTNESS_OPTS = [
+  { value: "loose", label: "Loose", note: "only fails clearly broken output" },
+  { value: "standard", label: "Standard", note: "a fair editor (default)" },
+  { value: "pedantic", label: "Pedantic", note: "nitpicks any real weakness" },
+] as const;
+
+const AUTONOMY_OPTS = [
+  { value: "L1", label: "L1 · Propose-only", note: "Director never dispatches; you run agents" },
+  { value: "L2", label: "L2 · Approval-required", note: "dispatches only on your explicit “go” (default)" },
+  { value: "L3", label: "L3 · Supervised-auto", note: "auto-runs low-risk agents; gates the rest" },
+  { value: "L4", label: "L4 · Full-auto", note: "auto-runs everything" },
+] as const;
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +52,11 @@ const LINKS = [
 export default async function SettingsPage() {
   const db = await dbReachable();
   const paused = await pausedAgentKeys();
+  const [strictness, autonomy, allowlist] = await Promise.all([
+    getCriticStrictness().catch(() => "standard" as const),
+    getAutonomyLevel().catch(() => "L2" as const),
+    getOutreachAllowlist().catch(() => [] as string[]),
+  ]);
   const config: Array<{ label: string; on: boolean; hint: string }> = [
     { label: "Database (DATABASE_URL)", on: isSet(process.env.DATABASE_URL), hint: "Neon Postgres" },
     { label: "Integration encryption (CONNECTION_ENCRYPTION_KEY)", on: isSet(process.env.CONNECTION_ENCRYPTION_KEY), hint: "needed for GSC/GA4/Slack" },
@@ -129,6 +157,94 @@ export default async function SettingsPage() {
         <p className="text-[11px] text-[#9a988e] mt-3 font-serif">
           Read-only view of the active routing — change it by setting the override variable in Vercel.
         </p>
+      </section>
+
+      <section className="mb-8">
+        <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">AUTOMATION</div>
+        <div className="rounded-[10px] border border-[#e8e6dc] bg-white divide-y divide-[#f3f1ea]">
+          {/* Autonomy level (LO-20) */}
+          <div className="px-5 py-4">
+            <div className="text-[13px] font-semibold text-[#141413] mb-0.5">Director autonomy</div>
+            <p className="text-[11px] text-[#9a988e] mb-3 font-serif">
+              How much the Director may run on its own. Per-batch approval still applies at L1/L2.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {AUTONOMY_OPTS.map((o) => (
+                <form action={setAutonomyLevelAction} key={o.value}>
+                  <input type="hidden" name="level" value={o.value} />
+                  <button
+                    type="submit"
+                    title={o.note}
+                    aria-pressed={autonomy === o.value}
+                    className={`text-[12px] px-3 py-1.5 rounded-[8px] border transition-colors ${
+                      autonomy === o.value
+                        ? "border-[#d97757] bg-[#fbf0eb] text-[#a33b2b] font-semibold"
+                        : "border-[#e0ddd2] text-[#141413] hover:border-[#d97757]"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                </form>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#9a988e] mt-2">
+              {AUTONOMY_OPTS.find((o) => o.value === autonomy)?.note}
+            </p>
+          </div>
+
+          {/* Critic strictness (LO-60) */}
+          <div className="px-5 py-4">
+            <div className="text-[13px] font-semibold text-[#141413] mb-0.5">Critic strictness</div>
+            <p className="text-[11px] text-[#9a988e] mb-3 font-serif">
+              How hard the Critic grades producing agents&apos; output.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {STRICTNESS_OPTS.map((o) => (
+                <form action={setCriticStrictnessAction} key={o.value}>
+                  <input type="hidden" name="strictness" value={o.value} />
+                  <button
+                    type="submit"
+                    title={o.note}
+                    aria-pressed={strictness === o.value}
+                    className={`text-[12px] px-3 py-1.5 rounded-[8px] border transition-colors ${
+                      strictness === o.value
+                        ? "border-[#d97757] bg-[#fbf0eb] text-[#a33b2b] font-semibold"
+                        : "border-[#e0ddd2] text-[#141413] hover:border-[#d97757]"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                </form>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#9a988e] mt-2">
+              {STRICTNESS_OPTS.find((o) => o.value === strictness)?.note}
+            </p>
+          </div>
+
+          {/* Outreach allowlist (LO-58) */}
+          <div className="px-5 py-4">
+            <div className="text-[13px] font-semibold text-[#141413] mb-0.5">Outreach domain allowlist</div>
+            <p className="text-[11px] text-[#9a988e] mb-3 font-serif">
+              Outreach jobs may only target these domains (subdomains allowed). Leave empty to allow all.
+            </p>
+            <form action={setOutreachAllowlistAction} className="flex flex-col gap-2 max-w-[420px]">
+              <textarea
+                name="domains"
+                rows={3}
+                defaultValue={allowlist.join("\n")}
+                placeholder={"example.com\npartner.org"}
+                className="text-[12px] rounded-[8px] border border-[#e0ddd2] px-3 py-2 font-mono focus:border-[#d97757] focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="self-start text-[12px] px-3 py-1.5 rounded-[8px] border border-[#e0ddd2] hover:border-[#d97757] text-[#141413] transition-colors"
+              >
+                Save allowlist
+              </button>
+            </form>
+          </div>
+        </div>
       </section>
 
       <section>
