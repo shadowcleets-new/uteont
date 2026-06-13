@@ -341,4 +341,400 @@ These are net-new capabilities, roughly ordered by leverage. Each follows §0.4 
 
 ---
 
-*This plan is a living document. As tasks land, move them into `docs/platform-design.md` §0.2 (built) and strike them here. Keep `.claude/active_context.md` pointed at the current phase.*
+---
+
+# PART B — Additional dimensions (breadth)
+
+> The sections above (IP-01…IP-47) cover the product/engine spine. The sections
+> below cover the cross-cutting concerns a production SaaS needs but that are
+> easy to forget. Same recipe per task: *why · files · steps · acceptance.*
+
+## 13. Accessibility (WCAG 2.2 AA) — P1 for a public product
+
+The app must be operable by keyboard and assistive tech. `prefers-reduced-motion` is already honored; the rest is a deliberate pass.
+
+- **IP-48 · Semantic landmarks + heading order** (`S`): every page wraps content in `<main>`, the sidebar in `<nav aria-label>`, and uses exactly one `<h1>` with a non-skipping heading hierarchy. **Files:** `src/app/**/page.tsx`, `src/components/sidebar.tsx`. **Acceptance:** axe-core (via the `chrome-devtools-mcp:a11y-debugging` skill or `@axe-core/playwright`) reports zero landmark/heading violations.
+- **IP-49 · Focus management + visible focus rings** (`S`): every interactive element is reachable by Tab in DOM order; `:focus-visible` rings on all buttons/links/inputs (some exist); a "skip to content" link; focus is trapped in modals/the command palette and restored on close. **Acceptance:** the full login→approve flow is completable with keyboard only; focus never lost to `<body>`.
+- **IP-50 · ARIA for dynamic content** (`M`): the streaming `LogConsole` (IP-17) uses `aria-live="polite"`; toasts (the undo toast) use `role="status"`; the attention banner announces changes; charts have `role="img"` + a text `aria-label` summary (the trajectory chart already does). **Acceptance:** a screen reader announces a completed run and the undo toast.
+- **IP-51 · Color contrast + non-color signals** (`S`): every text/background pair meets 4.5:1 (3:1 for large); status is never color-only (pair every badge with an icon/label — mostly done). Audit the warm-paper palette + the dark palette (IP-20). **Acceptance:** contrast checker passes on both themes; grayscale screenshot still legible.
+- **IP-52 · Forms a11y** (`S`): every input has an associated `<label htmlFor>`; errors use `aria-describedby` + `aria-invalid`; required fields marked. **Acceptance:** axe forms ruleset clean across settings/targets/campaigns forms.
+
+## 14. Internationalization & multi-locale SEO — P2
+
+`sites.locale` exists but the app UI and the content engine are English-only.
+
+- **IP-53 · App i18n scaffolding** (`M`): adopt `next-intl`; extract UI strings to message catalogs; locale from user pref in `kv_settings`. **Files:** `src/i18n/`, `messages/<locale>.json`, wrap `src/app/layout.tsx`. **Acceptance:** switching locale re-renders the shell in that language; default English unchanged.
+- **IP-54 · Multi-locale content generation** (`M`): the engine respects `sites.locale` — Research/SERP/Content agents target the right Google domain + language; hreflang scaffolding in generated meta. **Files:** thread `locale` through `dispatchAgentJob` payload → worker agents; `content-draft` emits `hreflang` hints. **Acceptance:** a non-en site generates locale-appropriate keywords + drafts; hreflang present.
+- **IP-55 · RTL support** (`S`): `dir="rtl"` driven by locale; logical CSS properties (`margin-inline`) instead of left/right. **Acceptance:** an RTL locale mirrors the layout without breakage.
+
+## 15. Email & notification infrastructure — P1
+
+Notifications today are Telegram + Slack + an in-app `notifications` table. Email (the universal channel) is missing.
+
+- **IP-56 · Transactional email** (`M`): integrate Resend (or Vercel's email partner); a `sendEmail(to, template, data)` service with React Email templates. Use for: password setup, weekly digest, approval-needed, critical alerts. **Files:** `src/lib/services/email.ts`, `emails/` templates, env `RESEND_API_KEY`. **Acceptance:** a digest email renders + sends; failures are logged, never block the cron.
+- **IP-57 · In-app notification center** (`S`): a bell icon + dropdown reading the `notifications` table with read/unread state and a mark-all-read action. **Files:** `src/components/notification-center.tsx`, `notifications.read_at` column + migration. **Acceptance:** new events appear in the bell; unread count badges; marking read persists.
+- **IP-58 · Per-channel notification preferences** (`S`): a settings matrix (event × channel: email/telegram/slack/in-app) persisted to `kv_settings`; the dispatch layer reads it. **Acceptance:** muting "completion" on email but keeping "error" on telegram is honored.
+- **IP-59 · Notification severity routing** (`S`, extends LO-21/IP-50): the `attention.ts` severity model decides the channel — critical → push (telegram/email), info → batched digest only. **Acceptance:** a critical checkpoint pages immediately; routine successes only show in the weekly digest.
+
+## 16. Billing, plans & usage metering (SaaS readiness) — P3, but design-now
+
+If this becomes a product, monetization needs the data model early so usage is metered from day one.
+
+- **IP-60 · Usage metering** (`M`): a `usage_events(id, account_id, kind 'agent_run'|'article'|'gsc_pull', quantity, at)` table; emit on every billable action (reuse the cost ledger IP-14). **Acceptance:** usage is queryable per account per month; no double-count (idempotent on job id).
+- **IP-61 · Plans + entitlements** (`M`): a `plans` definition (free/pro/agency) with limits (sites, monthly agent runs, seats); an `assertWithinPlan(account, action)` gate before dispatch. **Acceptance:** a free account hitting its run cap is blocked with an upgrade prompt; pro is not.
+- **IP-62 · Stripe integration** (`L`, depends IP-28 multi-user): checkout, webhooks (`customer.subscription.updated`), the customer portal; `account.plan` synced from Stripe. **Acceptance:** subscribing upgrades entitlements within one webhook; cancellation downgrades at period end.
+
+## 17. Privacy, GDPR/CCPA & data retention — P2
+
+The app scrapes the open web and stores LLM I/O; it needs a defensible data-handling posture.
+
+- **IP-63 · Data retention policies** (`S`): TTL on high-volume tables — `runs.result_json` (>90d → prune the blob, keep telemetry), `login_attempts` (>30d), `serp_snapshots`/`metrics_timeseries` (configurable). A weekly cron enforces it (the cron route exists; wire the purge). **Acceptance:** old blobs are pruned; the purge is idempotent + logged.
+- **IP-64 · Data export + deletion (DSAR)** (`M`, depends IP-28): an account can export all its data (JSON/ZIP) and request full deletion (cascade by `account_id`). **Acceptance:** export contains every row tied to the account; deletion leaves no orphan.
+- **IP-65 · PII scrubbing in logs + LLM context** (`S`): a `redactPII(text)` pass before logging or feeding scraped content to the planner (emails, phone numbers). Extends the `<UNTRUSTED_TOOL_OUTPUT>` fence. **Acceptance:** a fixture with an email/phone is redacted in logs + planner input. Pure + tested.
+- **IP-66 · Cookie consent + privacy policy** (`S`): a consent banner if any third-party analytics is added (IP-67); a `/privacy` + `/terms` page. **Acceptance:** no non-essential cookies before consent.
+
+## 18. Backup, DR & data lifecycle — P1 (ops-critical)
+
+`OPERATIONS.md` notes a quarterly Neon restore drill is owed (F-026).
+
+- **IP-67 · Automated backup verification** (`S`): a monthly cron that creates a Neon branch from a backup, runs `verify-migration.mjs` against it, and alerts on failure. **Acceptance:** the drill runs unattended monthly; a corrupt backup pages the operator.
+- **IP-68 · Point-in-time recovery runbook** (`S`): a tested, step-by-step restore procedure in `OPERATIONS.md` (stop writes → restore branch → verify → swap `DATABASE_URL` → restart worker). **Acceptance:** the runbook has been executed once successfully (the drill).
+- **IP-69 · Schema-evolution discipline** (`S`): document the additive-only migration rule (no destructive DDL without a two-phase expand/contract); a CI check that new migrations contain no `DROP`/`ALTER … TYPE` without a `-- @destructive-ack` comment. **Acceptance:** a destructive migration without the ack fails CI.
+
+## 19. Product analytics (dogfood the app's own usage) — P2
+
+The app optimizes SEO funnels but doesn't measure its own.
+
+- **IP-70 · Event tracking** (`S`): a typed `track(event, props)` (the existing `product-tracking-skills` plugin can scaffold the plan); send to a privacy-respecting sink (PostHog/Amplitude or a self-hosted `app_events` table). Cover: agent dispatched, checkpoint decided, GSC connected, time-to-first-value. **Acceptance:** a funnel "site created → GSC connected → first publish" is queryable.
+- **IP-71 · Activation & retention dashboards** (`S`): an internal `/admin/metrics` page (or the analytics sink) showing DAU/WAU, activation rate, feature adoption. **Acceptance:** the team can see which features are used.
+
+## 20. In-app help, docs & onboarding — P2
+
+- **IP-72 · Contextual help** (`S`): the `InfoTooltip` pattern already exists — extend it to every non-obvious control; a `?` help drawer per page. **Acceptance:** every settings/target field has a one-line explainer.
+- **IP-73 · Product tour** (`S`, depends IP-47 onboarding): a dismissible first-run tour highlighting the pipeline, approvals, and the Director. **Acceptance:** a new account sees the tour once; it's resumable + skippable.
+- **IP-74 · Living docs site** (`M`): a `/docs` section (MDX) covering each agent, the approval model, and the autonomy levels; generated from the registry where possible. **Acceptance:** every agent has a doc page; the autonomy levels are explained.
+
+## 21. Media & OG-image pipeline — P3
+
+Generated content needs hero + social images.
+
+- **IP-75 · Dynamic OG images** (`S`): `next/og` `ImageResponse` routes generating per-article OG cards (title + site brand). **Files:** `src/app/api/og/route.tsx`. **Acceptance:** sharing an article URL renders a branded OG card.
+- **IP-76 · Hero/inline image generation** (`M`): an `images` agent that generates or sources (licensed/stock API) hero images for drafts, with alt text from the content. Route through the AI Gateway (image models) or a stock API. **Acceptance:** a draft gets a hero image + descriptive alt; license metadata stored.
+
+## 22. Search & navigation within the app — P3
+
+- **IP-77 · Global content search** (`M`): full-text search across keywords/ideas/articles/tactics/decisions (Postgres `tsvector` + GIN index, or the `metrics`/content tables). Surface in the ⌘K palette (IP-22). **Acceptance:** searching a phrase finds it across content types ranked by relevance.
+
+## 23. Real-time collaboration — P3 (depends IP-28)
+
+- **IP-78 · Comments + mentions on checkpoints/articles** (`M`): a `comments(id, target_type, target_id, author_id, body, at)` table; @-mentions notify (IP-56/57). **Acceptance:** two users can discuss a draft inline; a mention notifies.
+- **IP-79 · Presence + live updates** (`M`): SSE/WebSocket (Vercel supports via Fluid Compute) broadcasting checkpoint/queue changes so the approvals inbox updates without refresh. **Acceptance:** an approval by one user disappears from another's queue live.
+
+## 24. Observability — tracing, metrics, RUM — P1
+
+`src/lib/observability/logger.ts` exists; deepen it.
+
+- **IP-80 · Distributed tracing** (`M`): OpenTelemetry spans across the request → dispatch → worker → completion path, correlated by `jobId`. Export to the platform's tracing (Vercel/OTel collector). **Acceptance:** a slow run is traceable end-to-end with per-span timing.
+- **IP-81 · App + worker metrics** (`S`): counters/histograms (jobs by status, agent latency p50/p95, Gemini tokens/day, queue depth) on a `/metrics` endpoint or pushed. **Acceptance:** a dashboard shows queue depth + agent latency over time.
+- **IP-82 · Real-user monitoring (RUM) + Web Vitals** (`S`): `useReportWebVitals` → the analytics sink; alert on CWV regressions. **Acceptance:** LCP/CLS/INP tracked per route; a regression alerts.
+
+## 25. Database scaling & data architecture — P2 (as volume grows)
+
+- **IP-83 · Connection pooling discipline** (`S`): confirm every serverless path uses the pooled Neon URL (`DATABASE_URL`, not `_UNPOOLED`) except migrations; a lint/check. **Acceptance:** no function uses an unpooled connection at runtime.
+- **IP-84 · Time-series partitioning + archival** (`M`, depends IP-10): partition `metrics_timeseries`/`serp_snapshots` by month; archive >12-month partitions to cold storage. **Acceptance:** queries stay fast as the series grows; old data is archived, not deleted.
+- **IP-85 · Read-path optimization** (`S`): materialized rollups (daily agent stats, monthly spend) refreshed by cron instead of computed per page-load. **Acceptance:** the dashboard reads a rollup, not a full scan.
+- **IP-86 · Redis/queue upgrade path** (`L`, only at scale): the Postgres queue is the bottleneck-free choice until ~10⁴ jobs/day; document the BullMQ/Redis swap behind the `enqueueJob` interface so it's a drop-in. **Acceptance:** the queue interface is abstracted; the swap touches one module.
+
+## 26. API platform — rate limiting, versioning, SDKs — P3 (depends IP-45)
+
+- **IP-87 · Rate limiting + abuse prevention** (`M`): per-token + per-IP limits (Vercel BotID + a token-bucket in `kv_settings`/edge KV) on all public + auth routes; extends the login limiter. **Acceptance:** a burst is throttled with `429 Retry-After`; legit traffic unaffected.
+- **IP-88 · Versioned public API + OpenAPI** (`M`): `/api/v1/*` with a generated OpenAPI spec; a typed client. **Acceptance:** the spec validates; a client can list sites/dispatch an agent/read runs.
+- **IP-89 · Outbound webhooks** (`S`): subscribe to events (publish, rank-change, checkpoint); signed deliveries with retry. **Acceptance:** a subscriber receives a signed, retried `article.published` event.
+
+## 27. Content safety & moderation — P2
+
+Generated + published content is a brand/legal risk.
+
+- **IP-90 · Output safety checks** (`S`): extend the QA agent — a `safety.ts` lint for prohibited claims, plagiarism signals (n-gram overlap vs scraped sources), and the existing banned-phrases list; block publish on a hard fail. **Acceptance:** a draft echoing a source verbatim is flagged; banned phrases block publish. Pure + tested.
+- **IP-91 · Disclosure + compliance tags** (`S`): auto-insert affiliate/AI-content disclosures per site policy; a `content_policy` config. **Acceptance:** a site requiring disclosure gets it injected into every publish.
+
+## 28. White-label / agency mode — P3 (depends IP-28)
+
+- **IP-92 · Per-account branding** (`M`): logo, colors (drive the IP-20 tokens from account config), custom domain per workspace (Vercel for Platforms). **Acceptance:** an agency account renders its brand; client sites are isolated.
+
+## 29. Compliance & audit readiness (SOC2-lite) — P3
+
+- **IP-93 · Immutable audit log** (`S`): a tamper-evident `audit_log` (hash-chained rows) for every security-relevant action (auth change, secret access, destructive op). Extends `approvals`/`decision_records`. **Acceptance:** the chain verifies; a tampered row is detectable.
+- **IP-94 · Access reviews + least privilege** (`S`, depends IP-28): a quarterly access-review export; service tokens scoped to the minimum. **Acceptance:** the review lists every principal + its grants.
+
+## 30. Load testing & capacity planning — P2
+
+- **IP-95 · Load test harness** (`M`): k6/Artillery scenarios for the queue (N concurrent worker claims), the dashboard, and the Director; run in CI nightly against preview. **Acceptance:** the system sustains a target RPS/queue depth with bounded p95; regressions alert.
+- **IP-96 · Capacity model** (`S`): document the limits (Gemini 1500 req/day, Neon connection cap, worker throughput) and the headroom per plan tier (IP-61). **Acceptance:** the model predicts when each ceiling is hit per usage tier.
+
+---
+
+# PART C — Reference material & templates
+
+## C.1 — The task template (copy this for any new task)
+
+```markdown
+### IP-NN · <imperative title> — <effort S/M/L/XL>, <priority P0–P3>
+**Why.** <the problem in 1–2 sentences + the value of fixing it>
+**Depends on.** <IP-xx, or "none">
+**Files.**
+  - create: <path> — <one-line purpose>
+  - modify: <path> — <what changes>
+  - schema: <table> + drizzle/NNNN_name.sql   (if any)
+**Data model.** <table(s) with columns + types>  (if any)
+**Steps (TDD).**
+  1. Write failing test <path>.test.ts: <the behavior + the key cases>.
+  2. Run it, watch it fail for the right reason.
+  3. Implement the minimal pure core <path>.ts.
+  4. Wire into <service/route/page>.
+  5. Verify: vitest <test> → tsc → eslint → next build (→ py_compile if worker).
+**Acceptance (Definition of Done — all must hold).**
+  - [ ] <observable behavior 1>
+  - [ ] <observable behavior 2>
+  - [ ] tests green, tsc clean, eslint clean, build green
+  - [ ] defensive: missing table/secret → degrades, never crashes
+**Risk / rollback.** <what could break + how to revert (it's behind a flag / additive migration)>
+```
+
+## C.2 — Definition of Done (applies to EVERY code task)
+
+A task is done only when **all** are true:
+1. A test was written **first**, watched fail, then passed (no production code without a prior failing test).
+2. `npx vitest run <new tests>` — green.
+3. `npx tsc --noEmit` — zero errors.
+4. `npx eslint <changed files>` — zero errors.
+5. `next build` — compiles, all routes render.
+6. Worker changes: `python -m py_compile` clean.
+7. Any DB read is defensive (missing table → empty, no throw).
+8. New table → idempotent migration authored + added to `verify-migration.mjs` `EXPECTED` (NOT applied blind).
+9. New external call → SSRF-guarded (`safeFetch`/`assert_public_url`) and timeout-bounded.
+10. New user-facing surface → has loading + empty + error states and is keyboard-accessible.
+11. One focused commit with a `type(scope): summary` message + the Co-Authored-By trailer.
+12. If it touches an LLM prompt or a structured-output schema → run the `prompt-reviewer` subagent.
+
+## C.3 — Fully-worked reference task (copy this exact pattern)
+
+> This is IP-42 (keyword-cannibalization detector) built end-to-end so a small
+> model has a concrete, correct template covering pure-core + test + service +
+> page + sidebar. It depends on IP-10's `metrics_timeseries` for its data, but
+> the **pure core is fully testable today** with injected data.
+
+**Step 1 — the failing test** `src/lib/services/cannibalization.test.ts`:
+```ts
+import { describe, it, expect } from "vitest";
+import { detectCannibalization } from "./cannibalization";
+
+const row = (query: string, page: string, impressions: number, position: number) =>
+  ({ query, page, impressions, position });
+
+describe("detectCannibalization (IP-42)", () => {
+  it("flags a query where 2+ pages both rank with real impressions", () => {
+    const out = detectCannibalization([
+      row("seo tools", "/a", 800, 6),
+      row("seo tools", "/b", 500, 9),
+      row("link building", "/c", 900, 4),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].query).toBe("seo tools");
+    expect(out[0].pages.map((p) => p.page).sort()).toEqual(["/a", "/b"]);
+  });
+
+  it("ignores a query served by a single page", () => {
+    expect(detectCannibalization([row("solo", "/x", 1000, 3)])).toHaveLength(0);
+  });
+
+  it("ignores pages below the impressions floor (noise)", () => {
+    const out = detectCannibalization([row("q", "/a", 5, 7), row("q", "/b", 4, 8)]);
+    expect(out).toHaveLength(0);
+  });
+
+  it("sorts competing pages best-rank-first", () => {
+    const out = detectCannibalization([row("q", "/a", 200, 9), row("q", "/b", 200, 3)]);
+    expect(out[0].pages[0].page).toBe("/b");
+  });
+});
+```
+
+**Step 2 — run it, watch it fail** (`Cannot find module './cannibalization'`).
+
+**Step 3 — the pure core** `src/lib/services/cannibalization.ts`:
+```ts
+/**
+ * @file cannibalization.ts
+ * @description IP-42 — detect keyword cannibalization: a single query where two
+ * or more of OUR pages both rank with meaningful impressions, splitting
+ * authority. Pure + tested; the caller supplies GSC per-(page,query) rows
+ * (from metrics_timeseries / the GSC by-page-by-query pull).
+ */
+
+export interface PageQueryRow {
+  query: string;
+  page: string;
+  impressions: number;
+  position: number;
+}
+
+export interface Cannibalization {
+  query: string;
+  pages: Array<{ page: string; impressions: number; position: number }>;
+  totalImpressions: number;
+}
+
+const MIN_IMPRESSIONS = 10; // per page, below this it's noise
+
+export function detectCannibalization(rows: PageQueryRow[]): Cannibalization[] {
+  const byQuery = new Map<string, PageQueryRow[]>();
+  for (const r of rows) {
+    if (r.impressions < MIN_IMPRESSIONS) continue;
+    const list = byQuery.get(r.query) ?? [];
+    list.push(r);
+    byQuery.set(r.query, list);
+  }
+  const out: Cannibalization[] = [];
+  for (const [query, pages] of byQuery) {
+    if (pages.length < 2) continue; // only one page ranks → not cannibalization
+    const sorted = [...pages].sort((a, b) => a.position - b.position); // best rank first
+    out.push({
+      query,
+      pages: sorted.map((p) => ({ page: p.page, impressions: p.impressions, position: p.position })),
+      totalImpressions: sorted.reduce((s, p) => s + p.impressions, 0),
+    });
+  }
+  return out.sort((a, b) => b.totalImpressions - a.totalImpressions);
+}
+```
+
+**Step 4 — wire it (record recommendations + a page).** Add a scan that runs in `cron/daily` after the GSC pull (mirror `runReoptimizationScan`): for each cannibalization, `recordDecision({ subjectKey: "loop.cannibalization", kind: "warning", title, rationale, … })`. Add a read-only `/cannibalization` page that lists current findings (defensive read), and a sidebar link under DATA. Both follow the `/cycles` page pattern exactly.
+
+**Step 5 — verify:** `npx vitest run src/lib/services/cannibalization.test.ts && npx tsc --noEmit && npx eslint src/lib/services/cannibalization.ts && next build`.
+
+**Definition of Done:** the 4 tests pass; the cron records one warning per cannibalized query; the page renders findings or a clean empty state; everything green.
+
+## C.4 — Algorithm specs (the math, unambiguous)
+
+**Information-gain coverage gap (IP-04).** Given our draft term set `O` and the top-N competitor profiles each with a term/entity set `C_i`:
+```
+df(t)        = |{ i : t ∈ C_i }|                         # document frequency across top-N
+mustCover    = { t : df(t) ≥ ceil(0.6 · N)  AND  t ∉ O } # ≥60% of winners cover it, we don't
+underCovered = { t : 1 ≤ df(t) ≤ floor(0.3 · N) }        # niche; a differentiation opportunity
+gain         = top-K underCovered by (idf(t) · intentWeight(t))   # the moat: cover what others thin-cover
+targetWords  = median(wordCount_i) · 1.15                 # beat the median by a 15% margin
+```
+`idf(t) = log(N / (df(t)+1))`. Tune `0.6`, `0.3`, `K`, `1.15` via `kv_settings` so they're operator-adjustable. Unit-test each set with hand-built fixtures.
+
+**Trend score (IP-01).** `score = 0.30·norm(volume) + 0.25·clamp(velocity,0,1) + 0.20·clamp(accel,0,1) + 0.15·intentWeight + 0.10·norm(serpGap)`, where `velocity = EMA_slope(interest, α=2/(7+1))`, `accel = Δvelocity`. `intentWeight`: transactional 1.0 / commercial 0.8 / informational 0.4 / navigational 0.1.
+
+**Re-optimization triggers (IP-06), median over a finalized window (low-pass filter):**
+```
+SLIP     : rank_delta_7d = median(pos[d-13..d-7]) − median(pos[d-6..d-0]) ≥ +3
+PLATEAU  : |rank_delta_28d| < 1  AND on page 2 (11–20)  for ≥ 60 days
+CTR_GAP  : ctr < 0.5 · expected_ctr(position)
+DECAY    : impressions_28d down ≥ 30% at flat rank (|Δrank| < 1)
+```
+Never compare today-vs-yesterday (that feeds SERP jitter into the actuator). Respect `cooldown_until` (21d dead-time = anti-windup). Exclude the 10% deterministic-hash holdout cohort from auto-action.
+
+## C.5 — Design token palette (IP-20)
+
+Define in `:root` (light) and `.dark`/`[data-theme=dark]`. Replace these hardcoded hex across the codebase with the matching `var(--…)`:
+
+| Token | Light | Dark | Replaces (current hardcoded) |
+|---|---|---|---|
+| `--bg` | `#faf9f5` | `#1a1915` | page background `#faf9f5` |
+| `--surface` | `#ffffff` | `#26241f` | card `bg-white` |
+| `--border` | `#e8e6dc` | `#3a372f` | `#e8e6dc`, `#f3f1ea` |
+| `--text` | `#141413` | `#f0eee6` | `#141413` |
+| `--text-muted` | `#6b6a64` | `#a8a59a` | `#6b6a64` |
+| `--text-faint` | `#9a988e` | `#7a776c` | `#9a988e` |
+| `--accent` | `#d97757` | `#e08a6c` | `#d97757` (the warm clay) |
+| `--accent-fg` | `#a33b2b` | `#f0a48b` | `#a33b2b` |
+| `--ok` | `#4a6b2f` | `#9bb87a` | green statuses |
+| `--warn` | `#8a6516` | `#d9bd7c` | amber statuses |
+| `--danger` | `#a33b2b` | `#d98b7c` | red statuses |
+
+Keep the motion tokens already in `globals.css`. Density: `[data-density=compact]` scales the spacing tokens down ~20%.
+
+## C.6 — Master estimation & sequencing matrix
+
+> Every task, its effort, priority, dependencies, and the phase it belongs to. A small model should pick the lowest-phase unblocked task.
+
+| Task | Effort | Pri | Depends on | Phase |
+|---|---|---|---|---|
+| IP-34 CI gate | S | P0 | — | P0 |
+| IP-33 hermetic test DB | M | P2→P0 | IP-34 | P0 |
+| IP-10 metrics_timeseries | M | P0 | — | P0 |
+| IP-25 pre-commit guards | S | P1 | — | P0 |
+| IP-35 error tracking | S | P1 | — | P0 |
+| IP-80 tracing | M | P1 | IP-35 | P0/P5 |
+| IP-36 feature flags | S | P2 | — | P1 |
+| IP-15 resilient fetch core | M | P1 | — | P1 |
+| IP-01 trends | L | P1 | IP-15 | P1 |
+| IP-02 SERP scrape | L | P1 | IP-15 | P1 |
+| IP-04 information-gain | M | P1 | IP-02,03 | P1 |
+| IP-03 semantic profiles | L | P2 | IP-02 | P1 |
+| IP-17 SSE streaming | L | P1 | — | P2 |
+| IP-11 GA4 conversions | M | P2 | IP-10 | P2 |
+| IP-12 rank tracking | M | P2 | IP-02,10 | P2 |
+| IP-06 full reopt loop | M | P2 | IP-10 | P2 |
+| IP-18 planner hardening | M | P1 | — | P2 |
+| IP-05 synthesis | M | P2 | IP-04 | P3 |
+| IP-07 idempotent publish | L | P1 | — | P3 |
+| IP-08 CMS UI | M | P2 | IP-07 | P3 |
+| IP-09 article editing | M | P3 | — | P3 |
+| IP-20 tokens + dark mode | M | P1 | — | P4 |
+| IP-24 states audit | S | P2 | — | P4 |
+| IP-21 Mission Control | L | P2 | IP-20 | P4 |
+| IP-22 command palette | S | P2 | — | P4 |
+| IP-48–52 a11y | S–M | P1 | IP-20 | P4 |
+| IP-26 nonce CSP | M | P2 | — | P5 |
+| IP-13 job_events | M | P2 | — | P5 |
+| IP-14 cost ledger | S | P2 | — | P5 |
+| IP-29/30/31 perf | S–M | P2/3 | IP-10 | P5 |
+| IP-32 E2E | M | P1 | IP-33 | P5 |
+| IP-37 alerting | S | P2 | IP-35 | P5 |
+| IP-56–59 email/notif | S–M | P1 | — | P5 |
+| IP-63–69 privacy/DR | S–M | P1/2 | IP-28 (some) | P5 |
+| IP-46 AI Gateway | S | P2 | — | P6 |
+| IP-41 internal linking | M | P2 | IP-10 | P6 |
+| IP-42 cannibalization | S | P2 | IP-10 | P6 |
+| IP-38 calendar | M | P2 | — | P6 |
+| IP-39 competitor monitor | M | P2 | IP-02 | P6 |
+| IP-47 onboarding | S | P2 | — | P6 |
+| IP-28 multi-user | XL | P3 | — | P6 |
+| IP-60–62 billing | M–L | P3 | IP-28 | P6 |
+| IP-70–96 (analytics, search, collab, scale, API, safety, white-label, compliance, load) | S–XL | P2/3 | various | P6+ |
+
+## C.7 — Risk register (top risks + mitigations)
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Scraping gets the IP bot-walled (Trends/SERP) | High | Engine stalls | IP-15 breaker + token bucket + degrade-not-lie fallback; proxy rotation as config |
+| Gemini free-tier quota (1500/day) exhausted | Med | Generative agents stall | Critic quota-gate (built) + cost ledger cap (IP-14) + AI Gateway fallbacks (IP-46) |
+| Neon journal drift causes a bad migration | Med | Data loss | Additive-only + idempotent rule (§0.3) + the `--@destructive-ack` CI check (IP-69) |
+| Prompt injection via scraped content → bad dispatch | Med | Unwanted actions | Per-batch approval + `<UNTRUSTED_TOOL_OUTPUT>` fence (built) + planner hardening (IP-18) + autonomy levels |
+| SSRF via the live-fetch agents | Low (now) | Internal exposure | `safeFetch`/`assert_public_url` (built) + DNS pinning (IP-27) |
+| Single shared admin → no isolation | High (at multi-tenant) | Data leak | IP-28 multi-user + row-level scoping before any public launch |
+| Live-DB tests flaky / hit prod | High | Red CI / noise | IP-33 hermetic test DB |
+| Cost runaway from the engine | Med | $$$ | Feature flag (IP-36) + cost ledger (IP-14) + holdout cohort caps blast |
+
+## C.8 — Glossary
+
+- **Agent** — a unit of work in `registry.ts`; `fn` (inline Vercel function) or `worker` (Railway Python).
+- **Checkpoint** — a human-approval gate (the `checkpoints` table + the 5-verb machine).
+- **Cycle** — one research→publish run; everything carries its `cycleId`.
+- **DecisionRecord** — an explainability row ("why this choice", with evidence + confidence).
+- **Critic** — the binary serves/fails reviewer of producing-agent output.
+- **Autonomy level (L1–L4)** — the standing guardrail envelope on how much the Director may run unattended.
+- **Information gain** — the terms/subtopics the winning SERP results cover that our draft doesn't (the engine's core signal).
+- **Holdout cohort** — the 10% of pages deterministically excluded from auto-action, the control arm that proves lift.
+- **Anti-windup / cooldown** — the 21-day no-re-act window matching Google's recrawl dead-time, so the controller doesn't oscillate.
+- **Defensive read** — a DB read wrapped to return empty on a missing table, so a deferred migration degrades gracefully.
+- **Idempotent migration** — additive SQL (`IF NOT EXISTS`) safe to run repeatedly; applied directly, never via `db:migrate` blind.
+
+---
+
+*This plan is a living document. As tasks land, move them into `docs/platform-design.md` §0.2 (built) and strike them here. Keep `.claude/active_context.md` pointed at the current phase. New work: copy the C.1 template, satisfy the C.2 Definition of Done.*
