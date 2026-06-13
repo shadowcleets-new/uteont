@@ -10,6 +10,7 @@
  */
 
 import type { Severity, TechCheck } from "./technical-seo";
+import { safeFetch, isBlockedHost } from "@/lib/agents/safe-fetch";
 
 export interface CrawlPage {
   /** Normalized path key used for graph identity (e.g. "/", "/blog/post"). */
@@ -114,15 +115,15 @@ export function analyzeSiteStructure(input: SiteStructureInput): SiteCrawlResult
 const MAX_PAGES = 10;
 
 async function fetchText(url: string, timeoutMs = 8000): Promise<{ ok: boolean; text: string }> {
+  // safeFetch re-validates the host on every redirect hop and resolves DNS, so a
+  // sitemap/homepage link that points at (or redirects to) an internal host is
+  // refused even though the entry host was public. Best-effort: any failure
+  // (blocked host, network, non-ok) collapses to { ok: false }.
   try {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(url, {
-      signal: ctrl.signal,
+    const res = await safeFetch(url, {
+      timeoutMs,
       headers: { "User-Agent": "UTEONT-SiteCrawl/1.0 (+https://uteont.vercel.app)" },
-      redirect: "follow",
     });
-    clearTimeout(to);
     if (!res.ok) return { ok: false, text: "" };
     return { ok: true, text: await res.text() };
   } catch {
@@ -159,25 +160,9 @@ function sitemapLocs(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1].trim());
 }
 
-/**
- * SSRF guard: hostnames that must never be crawled — loopback, RFC-1918
- * private ranges, link-local (incl. the cloud metadata IP), and mDNS
- * .local names. Hostname-level only (no DNS resolution), which matches
- * the single-operator threat model; covers every runSiteCrawl caller.
- */
-export function isBlockedHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return true;
-  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd")) return true; // IPv6 loopback + ULA
-  const ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (!ip) return false;
-  const [a, b] = [Number(ip[1]), Number(ip[2])];
-  if (a === 127 || a === 10 || a === 0) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 169 && b === 254) return true; // link-local + cloud metadata
-  return false;
-}
+// SSRF guard lives in safe-fetch.ts (the canonical home, also used by the live
+// QA/SEO fetch path). Re-exported here for back-compat with existing importers.
+export { isBlockedHost };
 
 export async function runSiteCrawl(rawUrl: string): Promise<SiteCrawlResult> {
   const entryUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;

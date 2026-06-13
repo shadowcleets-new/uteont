@@ -27,6 +27,8 @@ from typing import Callable
 
 from agents.tactics_scraper_agent.sources import (
     DEFAULT_SOURCES,
+    BlockedUrlError,
+    assert_public_url,
     classify_source,
     subreddit_of,
 )
@@ -44,11 +46,29 @@ def _no_progress(_msg: str) -> None:
     pass
 
 
+class _GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validate every redirect hop against the SSRF guard before following —
+    a public URL must not be able to 30x to the cloud-metadata IP or an internal
+    host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        assert_public_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_MAX_FETCH_BYTES = 2_000_000  # cap the response body so a huge page can't OOM the worker
+_opener = urllib.request.build_opener(_GuardedRedirectHandler())
+
+
 def _http_get(url: str, timeout: int = 15) -> str:
+    # SSRF guard: validate the initial host (scheme + resolved IP) AND every
+    # redirect hop (via _GuardedRedirectHandler). Raises BlockedUrlError on a
+    # non-public target.
+    assert_public_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (fixed UA, operator URL)
+    with _opener.open(req, timeout=timeout) as resp:  # noqa: S310 (guarded above + per hop)
         charset = resp.headers.get_content_charset() or "utf-8"
-        return resp.read().decode(charset, errors="replace")
+        return resp.read(_MAX_FETCH_BYTES).decode(charset, errors="replace")
 
 
 def _strip_html(raw: str) -> str:
