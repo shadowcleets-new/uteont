@@ -1,4 +1,4 @@
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, ne, sql, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
@@ -564,14 +564,17 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
   const db = getDb();
   const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   if (!row) return;
-  // A-04: never resurrect an already-completed job. If the worker's complete
-  // call committed server-side but its HTTP response timed out, the worker
-  // treats it as a failure and calls failJob(retry=true). Re-queuing a 'done'
-  // job would re-run it and duplicate its output — so a late fail on a done
-  // job is a no-op.
-  if (row.status === "done") return;
+  if (row.status === "done") return; // fast path; the guarded UPDATE below is the real gate
   const shouldRetry = retry && row.attempts < row.maxAttempts;
-  await db
+
+  // A-04: the transition is ATOMICALLY guarded on the job NOT already being
+  // 'done'. A read-then-write check would race a concurrent completeJob (the
+  // worker's complete HTTP call can commit server-side while its response times
+  // out, so it then calls failJob) — both could read 'claimed' and the fail
+  // would overwrite the committed 'done', stranding/duplicating the result.
+  // `WHERE status != 'done' RETURNING` lets exactly one of them win; if no row
+  // comes back, completion already happened and this fail is a no-op.
+  const [updated] = await db
     .update(jobs)
     .set({
       status: shouldRetry ? "queued" : "failed",
@@ -580,7 +583,9 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       finishedAt: shouldRetry ? null : new Date(),
       error,
     })
-    .where(eq(jobs.id, jobId));
+    .where(and(eq(jobs.id, jobId), ne(jobs.status, "done")))
+    .returning({ id: jobs.id });
+  if (!updated) return;
 
   // Only write a failure run + notify if we're giving up (not retrying)
   if (!shouldRetry) {

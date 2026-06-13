@@ -137,12 +137,20 @@ def handle_tactics_scraper(payload: dict) -> dict:
         from pathlib import Path
         from browser_automation.notebooklm_controller import extract_tactics
         storage = os.environ.get("NOTEBOOKLM_STORAGE_STATE")
-        return extract_tactics(
+        res = extract_tactics(
             nlm_url,
             storage_state=Path(storage) if storage else None,
             headless=True,
             progress=lambda m: log.info("notebooklm: %s", m),
         )
+        # The controller returns ok=False (rather than raising) for a dead
+        # session / timeout / selector miss. Without this, a broken NotebookLM
+        # run is indistinguishable from a legit zero-tactic run: it would be
+        # marked 'done' with no retry and no operator signal. Raise so the
+        # worker's fail path runs (retry + failure run + notification).
+        if not res.get("ok", False):
+            raise RuntimeError(res.get("error") or "notebooklm extraction failed")
+        return res
 
     from agents.tactics_scraper_agent.tactics_agent import scrape
     raw_sources = payload.get("sources")
