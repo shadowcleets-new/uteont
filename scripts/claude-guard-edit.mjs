@@ -36,18 +36,23 @@ if (!/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) process.exit(0);
 
 const file = String(filePathFrom(event)).replace(/\\/g, "/");
 
-// 1. .env files (allow .env.example — it carries no secrets).
-if (/(^|\/)\.env(\.[A-Za-z0-9_]+)?$/.test(file) && !/\.env\.example$/.test(file)) {
+// 1. .env files (allow .env.example — it carries no secrets). The suffix is
+//    repeatable so multi-segment Next.js env files (.env.production.local,
+//    .env.development.local) — the ones most likely to hold real secrets — are
+//    also blocked, not just .env / .env.local.
+if (/(^|\/)\.env(\.[A-Za-z0-9_]+)*$/.test(file) && !/\.env\.example$/.test(file)) {
   console.error(
     `Blocked: refusing to edit ${file}. Secrets live in .env* — set them in the Vercel/Railway dashboard, not via a file edit (F-031).`,
   );
   process.exit(2);
 }
 
-// 2. Applied migrations are immutable. Author a NEW migration instead.
-if (/drizzle\/00\d\d_.*\.sql$/.test(file)) {
+// 2. Applied migrations are immutable. Author a NEW migration instead. Match any
+//    4-digit migration (0000-9999), not just 0000-0099 — the count is already
+//    past 0012 and keeps growing.
+if (/drizzle\/\d{4}_.*\.sql$/.test(file)) {
   console.error(
-    `Blocked: ${file} is an applied migration. Editing it desyncs the journal (F-034/LO-41). Add a new drizzle/00NN_*.sql migration instead.`,
+    `Blocked: ${file} is an applied migration. Editing it desyncs the journal (F-034/LO-41). Add a new drizzle/NNNN_*.sql migration instead.`,
   );
   process.exit(2);
 }

@@ -34,7 +34,11 @@ export function isOutreachTargetAllowed(target: string, allowlist: string[]): bo
   const domain = extractDomain(target);
   if (!domain) return false;
   return allowlist.some((entry) => {
-    const allowed = extractDomain(entry) ?? entry.trim().toLowerCase();
+    // Only match against entries that normalize to a real registrable host.
+    // Falling back to the raw string let a bare TLD like "com" match every
+    // .com target (over-broad). An unparseable entry simply matches nothing.
+    const allowed = extractDomain(entry);
+    if (!allowed) return false;
     return domain === allowed || domain.endsWith(`.${allowed}`);
   });
 }

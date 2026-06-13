@@ -505,7 +505,28 @@ export async function runDirectorTurn(
     autonomyLevel === "L1"
       ? `_Autonomy is **L1 (propose-only)** — I won't dispatch from chat. Run the agent from its page, or raise autonomy in Settings._`
       : `_Reply “go” (or “approve”) to run this — I won't dispatch anything until you do._`;
-  const assistantText = downgradedForApproval ? `${parsed.text}\n\n${downgradeHint}` : parsed.text;
+
+  // When a batch partially executed (e.g. L3 ran the low-blast actions but
+  // withheld the high-blast ones, or an outreach target wasn't allowlisted),
+  // the withheld actions must NOT be reported as if they ran. Summarize them so
+  // the user knows what still needs their explicit go.
+  const blocked = enqueued.filter((e) => e.blocked);
+  const blockedNote =
+    !downgradedForApproval && blocked.length > 0
+      ? "\n\n_Held back (needs your approval): " +
+        blocked
+          .map((b) =>
+            b.blocked === "domain-not-allowlisted"
+              ? `${b.tool} (target not on the outreach allowlist)`
+              : `${b.tool} (autonomy ${autonomyLevel})`,
+          )
+          .join(", ") +
+        ". Reply “go” to run these too._"
+      : "";
+
+  const assistantText = downgradedForApproval
+    ? `${parsed.text}\n\n${downgradeHint}`
+    : `${parsed.text}${blockedNote}`;
 
   // 5. Persist the assistant message
   const assistantPayload: AppendMessageInput["payload"] = {

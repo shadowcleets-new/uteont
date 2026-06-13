@@ -33,4 +33,10 @@ describe("isOutreachTargetAllowed (LO-58)", () => {
   it("blocks an unparseable target when an allowlist is set", () => {
     expect(isOutreachTargetAllowed("???", ["example.com"])).toBe(false);
   });
+  it("does NOT let a bare-TLD entry match every domain under it (review)", () => {
+    // "com" can't be parsed to a registrable host; it must not fall back to a raw
+    // ".com" suffix match that would allow every .com target.
+    expect(isOutreachTargetAllowed("evil.com", ["com"])).toBe(false);
+    expect(isOutreachTargetAllowed("evil.com", ["example.com"])).toBe(false);
+  });
 });

@@ -17,7 +17,7 @@
 import NextAuth from "next-auth";
 import { NextResponse, type NextRequest } from "next/server";
 import { authConfig } from "@/auth.config";
-import { safeEqual } from "@/lib/crypto/constant-time";
+import { safeEqualDigest } from "@/lib/crypto/digest-equal";
 
 const { auth: nextAuth } = NextAuth(authConfig);
 
@@ -25,15 +25,16 @@ function unauthorized(reason: string) {
   return NextResponse.json({ error: "unauthorized", reason }, { status: 401 });
 }
 
-function checkServiceAuth(req: NextRequest): NextResponse | null {
+async function checkServiceAuth(req: NextRequest): Promise<NextResponse | null> {
   const path = req.nextUrl.pathname;
 
-  // A-08: all secret comparisons are constant-time (safeEqual) to remove the
-  // timing side-channel that plain `!==` leaks.
+  // A-08: secret comparisons use safeEqualDigest — constant-time AND
+  // length-independent (it compares fixed-size SHA-256 digests, so the timing
+  // never leaks the secret's length the way a char-by-char scan does).
   if (path.startsWith("/api/jobs")) {
     const expected = process.env.WORKER_SHARED_SECRET;
     if (!expected) return unauthorized("WORKER_SHARED_SECRET not configured");
-    if (!safeEqual(req.headers.get("authorization"), `Bearer ${expected}`)) {
+    if (!(await safeEqualDigest(req.headers.get("authorization"), `Bearer ${expected}`))) {
       return unauthorized("worker token mismatch");
     }
     return NextResponse.next();
@@ -42,7 +43,7 @@ function checkServiceAuth(req: NextRequest): NextResponse | null {
   if (path.startsWith("/api/cron")) {
     const expected = process.env.CRON_SECRET;
     if (!expected) return unauthorized("CRON_SECRET not configured");
-    if (!safeEqual(req.headers.get("authorization"), `Bearer ${expected}`)) {
+    if (!(await safeEqualDigest(req.headers.get("authorization"), `Bearer ${expected}`))) {
       return unauthorized("cron token mismatch");
     }
     return NextResponse.next();
@@ -51,7 +52,7 @@ function checkServiceAuth(req: NextRequest): NextResponse | null {
   if (path.startsWith("/api/telegram")) {
     const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
     if (!expected) return unauthorized("TELEGRAM_WEBHOOK_SECRET not configured");
-    if (!safeEqual(req.headers.get("x-telegram-bot-api-secret-token"), expected)) {
+    if (!(await safeEqualDigest(req.headers.get("x-telegram-bot-api-secret-token"), expected))) {
       return unauthorized("telegram secret mismatch");
     }
     return NextResponse.next();
@@ -81,11 +82,19 @@ function isCrossSiteWrite(req: NextRequest): boolean {
   if (origin) {
     try {
       if (new URL(origin).host !== req.nextUrl.host) return true;
+      return false; // Origin present and same-host → trusted same-origin write
     } catch {
       return true; // unparseable Origin on a write → treat as hostile
     }
   }
-  return false;
+
+  // Neither an affirmative same-origin Sec-Fetch-Site nor a matching Origin.
+  // A real same-origin browser write always sends at least one (modern browsers
+  // always set Sec-Fetch-Site; form/fetch POSTs set Origin). Their absence means
+  // a non-browser/forged caller — reject as a write we can't verify. Service
+  // routes (worker/cron/telegram) are already handled before this check.
+  if (secFetchSite === "same-origin" || secFetchSite === "none") return false;
+  return true;
 }
 
 const PUBLIC_PATHS = [
@@ -99,13 +108,13 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 }
 
-export default nextAuth((req) => {
+export default nextAuth(async (req) => {
   const pathname = req.nextUrl.pathname;
 
   // 1. Service routes first — they have their own auth (Bearer / secret header)
   //    and legitimately arrive cross-site (worker/cron/telegram), so they must
   //    be checked before the CSRF gate below.
-  const serviceResponse = checkServiceAuth(req);
+  const serviceResponse = await checkServiceAuth(req);
   if (serviceResponse) return serviceResponse;
 
   // 2. A-09: reject cross-site state-changing requests (CSRF defense-in-depth).
