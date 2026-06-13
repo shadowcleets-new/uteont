@@ -149,11 +149,47 @@ async function routeToDirector(chatId: string, text: string): Promise<void> {
 
   // Reply on Telegram with the assistant's text. Markdown disabled to avoid
   // parse errors from arbitrary content (URLs, brackets, etc.).
+  // LO-66: when the Director proposes a plan, attach an inline [Approve][Reject]
+  // keyboard so the user taps instead of typing a fragile free-text "go" — and
+  // since approval is per-batch (LO-55), the button carries the conversation id.
+  const buttons =
+    response.intent === "propose"
+      ? [
+          [
+            { text: "✅ Approve & run", callbackData: `dir_approve:${conversation.id}` },
+            { text: "✖ Reject", callbackData: `dir_reject:${conversation.id}` },
+          ],
+        ]
+      : undefined;
   await sendMessage({
     chatId,
     text: response.text || "(no response)",
     parseMode: undefined,
+    buttons,
   });
+}
+
+/** LO-66: approve the pending Director plan for a conversation (per-batch). Runs
+ *  a Director turn with an explicit approval message so the dispatch path fires
+ *  exactly as a typed "go" would. */
+async function approveDirectorPlan(conversationId: number): Promise<string> {
+  const { runDirectorTurn } = await import("@/lib/services/director");
+  const { getDirectorContext, getConversation } = await import("@/lib/services/conversations");
+  const conversation = await getConversation(conversationId);
+  if (!conversation) return "Conversation not found.";
+  const { summary, recent } = await getDirectorContext(conversationId);
+  const { response } = await runDirectorTurn({
+    conversation,
+    history: recent,
+    summary,
+    newUserMessage: "approve",
+    surface: "telegram",
+  });
+  const adminChatId = await getAdminChatId();
+  if (adminChatId) {
+    await sendMessage({ chatId: adminChatId, text: response.text || "(running…)", parseMode: undefined });
+  }
+  return "Approved — dispatching.";
 }
 
 // ------------------------------------------------------------------------
@@ -350,6 +386,16 @@ async function handleCallback(data: string): Promise<string> {
   if (verb === "open") {
     // Just an acknowledgement; the message itself already has the link.
     return "Open the message link to view.";
+  }
+
+  // LO-66: Director plan approve/reject from the inline keyboard.
+  if (verb === "dir_approve") {
+    const conversationId = Number(parts[1]);
+    if (!Number.isFinite(conversationId)) return "Bad conversation id";
+    return approveDirectorPlan(conversationId);
+  }
+  if (verb === "dir_reject") {
+    return "Plan rejected — tell me what to change.";
   }
 
   if (verb === "approve_top" && parts[1] === "keywords") {
