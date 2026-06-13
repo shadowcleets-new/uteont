@@ -496,12 +496,16 @@ export async function runDirectorTurn(
     }
   }
 
-  // LO-55: the model wanted to execute but the user hasn't approved this batch.
-  // Surface it as a proposal and withhold dispatch until they say go.
+  // LO-55: the model wanted to execute but the batch was withheld. Surface it as
+  // a proposal. The follow-up copy depends on WHY it was withheld: at L1 the
+  // operator has set propose-only, so "reply go" would loop forever — tell them
+  // to run the agent themselves or raise the autonomy level instead.
   const effectiveIntent: DirectorResponse["intent"] = downgradedForApproval ? "propose" : parsed.intent;
-  const assistantText = downgradedForApproval
-    ? `${parsed.text}\n\n_Reply “go” (or “approve”) to run this — I won't dispatch anything until you do._`
-    : parsed.text;
+  const downgradeHint =
+    autonomyLevel === "L1"
+      ? `_Autonomy is **L1 (propose-only)** — I won't dispatch from chat. Run the agent from its page, or raise autonomy in Settings._`
+      : `_Reply “go” (or “approve”) to run this — I won't dispatch anything until you do._`;
+  const assistantText = downgradedForApproval ? `${parsed.text}\n\n${downgradeHint}` : parsed.text;
 
   // 5. Persist the assistant message
   const assistantPayload: AppendMessageInput["payload"] = {

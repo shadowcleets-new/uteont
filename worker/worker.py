@@ -303,12 +303,22 @@ def main() -> int:
             log.info("job %d done", job_id)
             _health_state["jobs_completed"] += 1
         except ApiError as e:
-            # Handler succeeded; only the completion report failed. Do NOT
-            # fail_job (that would resurrect a possibly-committed job). The
-            # job stays 'claimed' and a reclaim re-reports completion, which
-            # the idempotent server collapses to a no-op.
-            log.error("job %d completed but the completion report failed: %s", job_id, e)
-            _health_state["jobs_completed"] += 1
+            # Handler succeeded but the completion REPORT failed. Requeue it —
+            # this is safe because BOTH server guards are in place:
+            #   - completeJob is idempotent (gated on status='claimed'), so a
+            #     re-run that re-completes an already-done job is a no-op; and
+            #   - failJob ignores a job already in 'done', so this requeue is a
+            #     no-op if the server actually committed (no duplicate failure
+            #     run, no resurrection).
+            # If the server did NOT commit, the requeue lets the job be reclaimed
+            # and finished — without it the job would strand in 'claimed' forever
+            # (claimNextJob only picks 'queued').
+            log.error("job %d: completion report failed, requeuing: %s", job_id, e)
+            _health_state["jobs_failed"] += 1
+            try:
+                client.fail_job(job_id, f"completion report failed: {e}", retry=True)
+            except ApiError as ae:
+                log.error("requeue after report failure also failed: %s", ae)
 
     log.info("worker exiting cleanly")
     return 0
