@@ -15,13 +15,17 @@ if (!url) {
 
 const sql = neon(url);
 
-// Keep in lockstep with src/lib/db/schema.ts (migrations 0000–0011).
+// Keep in lockstep with src/lib/db/schema.ts (migrations 0000–0013).
 const EXPECTED = [
   "agent_state", "approvals", "articles", "auth_config", "checkpoints",
   "conversations", "cycles", "decision_records", "ideas", "jobs",
   "keyword_exclusions", "keywords", "kv_settings", "login_attempts",
   "messages", "notifications", "result_cache", "runs",
   "site_integrations", "sites", "target_snapshots", "targets",
+  // 0012 — Critic + Tactics:
+  "critiques", "tactics",
+  // 0013 — Campaigns + keyword clusters:
+  "campaigns", "keyword_clusters",
 ];
 
 const tableRows = await sql`
@@ -43,6 +47,9 @@ try {
 } catch (e) {
   console.log("migrations table query error:", e.message);
 }
-console.log("journal-applied migrations count:", migs.length, "(repo ships 0000–0011; journal lag is known drift — see GAPS F-034)");
+console.log("journal-applied migrations count:", migs.length, "(repo ships 0000–0013; journal lag is known drift — see GAPS F-034)");
+
+// Exit non-zero on real drift so this can gate a deploy.
+process.exit(missing.length ? 2 : 0);
 
 process.exit(missing.length === 0 ? 0 : 2);
