@@ -8,7 +8,7 @@
  * Exit 0 = allow. Exit 2 + stderr = block with a reason (Claude Code convention).
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 
 function readStdin() {
   try {
@@ -49,8 +49,9 @@ if (/(^|\/)\.env(\.[A-Za-z0-9_]+)*$/.test(file) && !/\.env\.example$/.test(file)
 
 // 2. Applied migrations are immutable. Author a NEW migration instead. Match any
 //    4-digit migration (0000-9999), not just 0000-0099 — the count is already
-//    past 0012 and keeps growing.
-if (/drizzle\/\d{4}_.*\.sql$/.test(file)) {
+//    past 0012 and keeps growing. Only block when the file ALREADY EXISTS
+//    (editing applied SQL); creating a brand-new migration file is allowed.
+if (/drizzle\/\d{4}_.*\.sql$/.test(file) && existsSync(file)) {
   console.error(
     `Blocked: ${file} is an applied migration. Editing it desyncs the journal (F-034/LO-41). Add a new drizzle/NNNN_*.sql migration instead.`,
   );

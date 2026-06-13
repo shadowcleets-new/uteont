@@ -604,6 +604,43 @@ export const tactics = pgTable(
   }),
 );
 
+// LO-36: campaigns group multiple targets + keyword clusters under one goal, so
+// the operator can run a themed push instead of juggling flat per-site targets.
+export const campaigns = pgTable(
+  "campaigns",
+  {
+    id:        serial("id").primaryKey(),
+    siteId:    integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    name:      text("name").notNull(),
+    goal:      text("goal"),
+    status:    text("status").notNull().default("active"), // active | paused | done | archived
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite: index("campaigns_site_idx").on(t.siteId),
+  }),
+);
+
+// LO-36: a keyword cluster is a themed group of keywords (one content angle),
+// optionally rolled up under a campaign.
+export const keywordClusters = pgTable(
+  "keyword_clusters",
+  {
+    id:         serial("id").primaryKey(),
+    siteId:     integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    name:       text("name").notNull(),
+    intent:     text("intent"),                            // informational | commercial | transactional | navigational
+    keywords:   jsonb("keywords").$type<string[]>().notNull().default([]),
+    createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite:     index("keyword_clusters_site_idx").on(t.siteId),
+    byCampaign: index("keyword_clusters_campaign_idx").on(t.campaignId),
+  }),
+);
+
 export type Message = typeof messages.$inferSelect;
 export type ResultCache = typeof resultCache.$inferSelect;
 export type Target = typeof targets.$inferSelect;
@@ -612,3 +649,5 @@ export type Checkpoint = typeof checkpoints.$inferSelect;
 export type DecisionRecord = typeof decisionRecords.$inferSelect;
 export type Critique = typeof critiques.$inferSelect;
 export type Tactic = typeof tactics.$inferSelect;
+export type Campaign = typeof campaigns.$inferSelect;
+export type KeywordCluster = typeof keywordClusters.$inferSelect;
