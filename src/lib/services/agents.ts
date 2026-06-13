@@ -44,6 +44,17 @@ export async function runAgent(opts: {
       const runner = INLINE_RUNNERS[opts.agentKey];
       const { result } = await runner({ payload });
       await finishRun({ runId: run.id, status: "success", result });
+      // Critic auto-review for fn-runtime producers (content-brief / content-draft).
+      // These never pass through applyJobResult, so the critique is wired here.
+      // Fail-open + gated to target agents, so non-targets are a cheap no-op.
+      const { maybeCritique, critiqueInputFromResult } = await import("./critic");
+      await maybeCritique({
+        agentKey: opts.agentKey,
+        siteId: opts.siteId,
+        runId: run.id,
+        endGoal: String(payload["goal"] ?? payload["_endGoal"] ?? ""),
+        output: critiqueInputFromResult(result),
+      });
       return { mode: "inline", runId: run.id, result };
     } catch (e: unknown) {
       const err = e instanceof Error ? e.message : String(e);

@@ -216,3 +216,66 @@ export async function recordCritique(input: {
   }
 }
 // #endregion
+
+// #region 5. Auto-critique orchestration
+/**
+ * Distill a result blob into the text the Critic reviews. Picks the most
+ * meaningful field per agent shape (draft body, brief, idea list, outreach
+ * email, top keywords) and falls back to a compact JSON projection.
+ */
+export function critiqueInputFromResult(result: Record<string, unknown>): string {
+  if (typeof result.body === "string" && result.body.trim()) return result.body;
+  if (typeof result.brief === "string" && result.brief.trim()) return result.brief;
+  if (typeof result.email === "string" && result.email.trim()) return result.email;
+  if (Array.isArray(result.ideas)) return JSON.stringify(result.ideas).slice(0, 12_000);
+  if (Array.isArray(result.top_keywords)) return JSON.stringify(result.top_keywords).slice(0, 12_000);
+  return JSON.stringify(result).slice(0, 12_000);
+}
+
+/**
+ * Auto-review a producing agent's terminal output and persist the verdict.
+ * The single entry point used by BOTH completion paths — the worker path
+ * (applyJobResult) and the inline fn-runtime path (runAgent) — so fn agents
+ * like content-brief / content-draft get critiqued too (they never touch
+ * applyJobResult). Best-effort + fail-open: it never throws into, blocks, or
+ * fails the job it reviews. Resolves strictness + live budget internally.
+ */
+export async function maybeCritique(input: {
+  agentKey: string;
+  siteId?: number | null;
+  jobId?: number | null;
+  runId: number;
+  endGoal: string;
+  output: string;
+}): Promise<void> {
+  try {
+    const gate = shouldCritique({ agentKey: input.agentKey, iteration: 1, budgetFraction: 1 });
+    if (!gate.run) return;
+    const { getCriticStrictness } = await import("./app-settings");
+    const { remainingBudgetFraction } = await import("./gemini-budget");
+    const [strictness, budgetFraction] = await Promise.all([
+      getCriticStrictness(),
+      remainingBudgetFraction(),
+    ]);
+    const critique = await runCritique({
+      agentKey: input.agentKey,
+      endGoal: input.endGoal,
+      output: input.output,
+      strictness,
+      budgetFraction,
+    });
+    if (!critique.skipped) {
+      await recordCritique({
+        siteId: input.siteId,
+        agentKey: input.agentKey,
+        jobId: input.jobId ?? null,
+        runId: input.runId,
+        endGoal: input.endGoal,
+        result: critique,
+      });
+    }
+  } catch (e) {
+    console.warn("[critic] maybeCritique failed (non-blocking)", e);
+  }
+}
+// #endregion
