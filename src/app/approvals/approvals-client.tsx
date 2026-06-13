@@ -4,7 +4,42 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Inbox } from "lucide-react";
 import { frictionFor, VERBS, type Verb } from "@/lib/services/checkpoint-machine";
 import { Markdown } from "@/lib/markdown/render";
+import { computeLineDiff } from "@/lib/diff/line-diff";
 import { cn } from "@/lib/utils";
+
+/** LO-17: unified line diff of a proposed page edit (before → after). */
+function DiffView({ before, after }: { before: string; after: string }) {
+  const lines = computeLineDiff(before, after);
+  const added = lines.filter((l) => l.kind === "add").length;
+  const removed = lines.filter((l) => l.kind === "remove").length;
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] font-bold tracking-wider text-[#9a988e]">PROPOSED CHANGES</span>
+        <span className="text-[10px] text-[#4a6b2f]">+{added}</span>
+        <span className="text-[10px] text-[#a33b2b]">−{removed}</span>
+      </div>
+      <pre className="rounded-md border border-[#e8e6dc] bg-white text-[11px] font-mono leading-[1.5] p-0 max-h-[360px] overflow-auto">
+        {lines.map((l, i) => (
+          <div
+            key={i}
+            className={cn(
+              "px-3 whitespace-pre-wrap",
+              l.kind === "add" && "bg-[#eef5e8] text-[#3d6b35]",
+              l.kind === "remove" && "bg-[#fbeea] text-[#a33b2b]",
+              l.kind === "context" && "text-[#6b6a64]",
+            )}
+          >
+            <span className="select-none opacity-50 mr-2">
+              {l.kind === "add" ? "+" : l.kind === "remove" ? "−" : " "}
+            </span>
+            {l.text || " "}
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
+}
 
 export interface CheckpointView {
   id: number;
@@ -40,10 +75,27 @@ function PayloadDetail({ payload }: { payload: Record<string, unknown> | null })
   if (!payload) return null;
   const agentKey = typeof payload.agentKey === "string" ? payload.agentKey : null;
   const result = (payload.result ?? null) as Record<string, unknown> | null;
-  if (!result) return null;
+
+  // LO-17: when the checkpoint carries a before/after (a proposed page edit),
+  // lead with the diff so the operator reviews the change, not just the result.
+  const before = typeof payload.before === "string" ? payload.before : null;
+  const after =
+    typeof payload.after === "string"
+      ? payload.after
+      : typeof result?.body === "string"
+        ? result.body
+        : null;
+  const diff = before != null && after != null ? <DiffView before={before} after={after} /> : null;
+
+  if (!result) return diff;
 
   if (agentKey === "content-writing" && typeof result.body === "string") {
-    return <Markdown source={result.body} />;
+    return (
+      <>
+        {diff}
+        <Markdown source={result.body} />
+      </>
+    );
   }
 
   if (agentKey === "idea-generation" && Array.isArray(result.ideas)) {
@@ -108,6 +160,29 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
   // for one item can never surface on (or ride along with) another.
   const [noteFor, setNoteFor] = useState<{ id: number; verb: Verb } | null>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  // LO-18: the just-decided checkpoint, offered for undo for a short window.
+  const [lastDecided, setLastDecided] = useState<{ item: CheckpointView; verb: Verb } | null>(null);
+  const [undoing, setUndoing] = useState(false);
+
+  async function undoLast() {
+    if (!lastDecided || undoing) return;
+    setUndoing(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/checkpoints/${lastDecided.item.id}/undo`, { method: "POST" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "undo failed");
+      }
+      setItems((prev) => [lastDecided.item, ...prev.filter((i) => i.id !== lastDecided.item.id)]);
+      setSelectedId(lastDecided.item.id);
+      setLastDecided(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "undo failed");
+    } finally {
+      setUndoing(false);
+    }
+  }
 
   // Honour the explicit pick while it's still queued, else fall back to the head.
   const effectiveId = useMemo(() => {
@@ -175,6 +250,12 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
         throw new Error(j.error ?? "decision failed");
       }
       setNote("");
+      // LO-18: offer undo for terminal decisions (approve/reject/edit). Defer/
+      // escalate keep the item actionable, so there's nothing to undo.
+      if (verb === "approve" || verb === "reject" || verb === "edit") {
+        setLastDecided({ item: removed, verb });
+        window.setTimeout(() => setLastDecided((cur) => (cur?.item.id === removed.id ? null : cur)), 5 * 60 * 1000);
+      }
     } catch (e) {
       setItems((prev) => [removed, ...prev]); // roll back
       setSelectedId(removed.id);
@@ -186,6 +267,30 @@ export function ApprovalsClient({ initial }: { initial: CheckpointView[] }) {
 
   return (
     <div className="flex flex-col lg:grid lg:grid-cols-[38%_62%] gap-3 min-h-[70vh]">
+      {/* LO-18: undo toast — re-open the just-decided checkpoint within the window. */}
+      {lastDecided && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-[10px] border border-[#e8e6dc] bg-[#141413] text-white px-4 py-2.5 shadow-lg">
+          <span className="text-[12px]">
+            {lastDecided.verb}d <span className="font-medium">{lastDecided.item.title}</span>
+          </span>
+          <button
+            type="button"
+            onClick={undoLast}
+            disabled={undoing}
+            className="text-[12px] font-semibold text-[#f0a48b] hover:text-white transition-colors disabled:opacity-50"
+          >
+            {undoing ? "Undoing…" : "Undo"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLastDecided(null)}
+            className="text-[12px] text-[#9a988e] hover:text-white"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* QUEUE */}
       <aside className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden self-start">
         <div className="px-4 py-2.5 border-b border-[#e8e6dc] flex items-center justify-between">

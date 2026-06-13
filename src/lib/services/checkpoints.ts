@@ -9,7 +9,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { checkpoints, type Checkpoint } from "@/lib/db/schema";
-import { applyVerb, canDecide, toApprovalDecision, type CheckpointStatus, type Verb } from "./checkpoint-machine";
+import { applyVerb, canDecide, canUndo, toApprovalDecision, type CheckpointStatus, type Verb } from "./checkpoint-machine";
 import { recordApproval } from "./approvals";
 import { notifySlackForSite } from "./slack-notify";
 
@@ -117,6 +117,32 @@ export async function decideCheckpoint(
       cp.siteId,
       `Checkpoint ${verb.toUpperCase()}: "${cp.title}"${opts.note ? ` — ${opts.note}` : ""}`,
     ).catch(() => {});
+  }
+  return row;
+}
+
+/**
+ * LO-18: undo a recently-decided checkpoint — re-open it to 'pending', clearing
+ * the decision. Allowed only within UNDO_WINDOW_MS of the decision (canUndo).
+ * The transition is atomically guarded on the checkpoint still being terminal so
+ * a concurrent decide+undo can't fight.
+ */
+export async function undoCheckpoint(id: number, nowMs = Date.now()): Promise<Checkpoint> {
+  const db = getDb();
+  const cp = await getCheckpoint(id);
+  if (!cp) throw new CheckpointError("Checkpoint not found");
+  if (!canUndo(cp.status as CheckpointStatus, cp.decidedAt, nowMs)) {
+    throw new CheckpointError("This decision can no longer be undone (window elapsed or not decided).");
+  }
+  const [row] = await db
+    .update(checkpoints)
+    .set({ status: "pending", decision: null, decidedBy: null, decidedAt: null })
+    .where(and(eq(checkpoints.id, id), eq(checkpoints.status, cp.status)))
+    .returning();
+  if (!row) throw new CheckpointError(`Checkpoint changed under us (now not ${cp.status}).`);
+
+  if (cp.siteId) {
+    await notifySlackForSite(cp.siteId, `Checkpoint UNDONE: "${cp.title}" is back in the queue.`).catch(() => {});
   }
   return row;
 }

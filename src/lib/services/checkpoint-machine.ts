@@ -48,3 +48,24 @@ export function toApprovalDecision(verb: Verb): "approve" | "reject" | "edit" {
   if (verb === "edit") return "edit";
   return "reject";
 }
+
+/** LO-18: how long after a terminal decision the operator can still undo it. */
+export const UNDO_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Can a checkpoint's decision be undone right now? Only terminal decisions
+ * (approve/reject/edit) are undoable, and only within UNDO_WINDOW_MS of when
+ * they were decided. Pure — `nowMs` is injected so it's testable.
+ */
+export function canUndo(
+  status: CheckpointStatus,
+  decidedAt: Date | string | number | null | undefined,
+  nowMs: number,
+): boolean {
+  if (!isTerminal(status)) return false;
+  if (decidedAt == null) return false;
+  const decidedMs =
+    decidedAt instanceof Date ? decidedAt.getTime() : new Date(decidedAt).getTime();
+  if (!Number.isFinite(decidedMs)) return false;
+  return nowMs - decidedMs <= UNDO_WINDOW_MS;
+}

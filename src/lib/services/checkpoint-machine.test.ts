@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { VERBS, isTerminal, canDecide, applyVerb, frictionFor, toApprovalDecision } from "./checkpoint-machine";
+import {
+  VERBS,
+  isTerminal,
+  canDecide,
+  applyVerb,
+  frictionFor,
+  toApprovalDecision,
+  canUndo,
+  UNDO_WINDOW_MS,
+} from "./checkpoint-machine";
 
 describe("checkpoint machine", () => {
   it("has the five decision verbs", () => {
@@ -41,5 +50,23 @@ describe("checkpoint machine", () => {
     expect(toApprovalDecision("approve")).toBe("approve");
     expect(toApprovalDecision("edit")).toBe("edit");
     expect(toApprovalDecision("reject")).toBe("reject");
+  });
+
+  describe("canUndo (LO-18)", () => {
+    const now = 1_000_000_000_000;
+    it("allows undo of a terminal decision inside the window", () => {
+      expect(canUndo("approved", new Date(now - 60_000), now)).toBe(true);
+      expect(canUndo("rejected", new Date(now - (UNDO_WINDOW_MS - 1)), now)).toBe(true);
+    });
+    it("refuses undo after the window expires", () => {
+      expect(canUndo("approved", new Date(now - (UNDO_WINDOW_MS + 1)), now)).toBe(false);
+    });
+    it("refuses undo of a non-terminal (still-open) checkpoint", () => {
+      expect(canUndo("pending", new Date(now), now)).toBe(false);
+      expect(canUndo("deferred", new Date(now), now)).toBe(false);
+    });
+    it("refuses undo with no decidedAt", () => {
+      expect(canUndo("approved", null, now)).toBe(false);
+    });
   });
 });
