@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { cycles } from "@/lib/db/schema";
+import { cycles, keywords, ideas, articles, jobs, runs } from "@/lib/db/schema";
 
 export async function createCycle(goal: string, seedTerms: string[], siteId: number) {
   if (!siteId) {
@@ -41,4 +41,19 @@ export async function updateCycle(id: number, patch: { goal?: string; status?: s
     .where(eq(cycles.id, id))
     .returning();
   return row ?? null;
+}
+
+/** LO-70: the entities that carry this cycleId, for the cycle-detail timeline. */
+export async function getCycleDetail(id: number) {
+  const cycle = await getCycle(id);
+  if (!cycle) return null;
+  const db = getDb();
+  const [kw, idea, art, job, run] = await Promise.all([
+    db.select().from(keywords).where(eq(keywords.cycleId, id)).orderBy(desc(keywords.id)).limit(50),
+    db.select().from(ideas).where(eq(ideas.cycleId, id)).orderBy(desc(ideas.id)).limit(50),
+    db.select().from(articles).where(eq(articles.cycleId, id)).orderBy(desc(articles.id)).limit(50),
+    db.select().from(jobs).where(eq(jobs.cycleId, id)).orderBy(desc(jobs.id)).limit(50),
+    db.select().from(runs).where(eq(runs.cycleId, id)).orderBy(desc(runs.id)).limit(50),
+  ]);
+  return { cycle, keywords: kw, ideas: idea, articles: art, jobs: job, runs: run };
 }
