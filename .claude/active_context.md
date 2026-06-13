@@ -4,11 +4,11 @@
 > Keep ≤100 lines.
 
 ## 1. Current Focus
-**Design-completion effort (branch `feature/design-completion`).** The 3 parked
-docs (design, backlog, audit) are landed in `docs/`, the audit fixes + the
-backlog's net-new features are built, the design doc is reality-corrected, and a
-first UI pass shipped. One item outstanding: the adversarial-review fleet
-(subagents) is rate-limited until ~03:40 IST — re-run it, then merge.
+**Design-completion effort COMPLETE (branch `feature/design-completion`, 27
+commits).** All 3 parked docs are landed and acted on: audit A-01..A-17 fixed,
+the entire LO backlog's in-repo-buildable items built, the adversarial review
+run with all 15 findings closed, the design doc reality-corrected, and the
+UI/logic-last pass shipped. Ready to squash-merge to `main`.
 
 ## 2. What shipped (13 commits on `feature/design-completion`)
 - **Security (audit A-01..A-17):** telegram callback authz + markdown escape,
@@ -54,6 +54,17 @@ first UI pass shipped. One item outstanding: the adversarial-review fleet
   UI rebuild. Catalogued in platform-design.md §0.3.
 
 ## 5. Next Immediate Steps
-1. Re-run the adversarial review workflow; close any real findings.
-2. Apply migration 0012 against Neon (idempotent) + verify-migration.
-3. Squash-merge `feature/design-completion` → main; delete branch.
+1. Squash-merge `feature/design-completion` → main; delete branch.
+2. Apply migrations 0012 + 0013 against Neon (idempotent) + verify-migration.
+3. Resume the still-to-build moat: the embedding/SERP intelligence engine and
+   the metrics_timeseries substrate (design §0.3).
+
+## 6. Built this session (27 commits)
+Security (audit A-01..17) · Critic #15 · Tactics #16 + NotebookLM · director
+per-batch approval + autonomy L1-L4 + outreach allowlist · live QA/SEO + per-page
+GSC · Claude Code automations · /tactics /cycles /campaigns · counterfactual ghost
+· closed-loop reopt trigger · diff-review + undo · quiet-by-default attention ·
+telegram inline approval · Critic-on-Runs · reduced-motion. Adversarial review:
+15 findings, all closed (2 SSRF, failJob TOCTOU, critic cache-replay, etc.).
+Verification: 93 pure tests + tsc + eslint + next build green; DB unreachable so
+live-DB tests deferred; migrations 0012/0013 staged (idempotent), not applied.

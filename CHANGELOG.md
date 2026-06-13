@@ -3,7 +3,40 @@
 > Structured session journal. Keep the last 15 entries here; archive older
 > ones under `.claude/history/`.
 
-## [2026-06-13 08:50:00] - Session quirky-raman-4a890e (design completion)
+## [2026-06-13 15:45:00] - Session quirky-raman-4a890e (design completion — full)
+### 1. Intent, Roles, & Context
+- **The Problem:** Complete EVERY remaining item from the 3 parked docs — not
+  just the high-value subset — then run the adversarial review and close all
+  findings; logic first, UI last; design doc updated.
+- **Specialist Personas Invoked:** Principal Security Auditor; Agent-Platform
+  Architect; Control-Systems Engineer (reopt loop); CXO/UX; Release Engineer.
+- **The Strategy:** Pick up where the first pass stopped. Run the review fleet
+  (15 findings), fix all. Then build the remaining backlog in dependency order,
+  each TDD'd on pure logic + build-verified, committing per feature.
+
+### 2. Surgical Technical Modifications
+- **27 commits** on `feature/design-completion`. New this pass beyond the
+  earlier subset: all 15 adversarial-review fixes (2 SSRF redirect/rebind,
+  failJob TOCTOU, critic cache-replay + fn-runtime wiring, NotebookLM silent
+  failure, CSRF absent-headers, allowlist TLD, guard regexes, length-safe
+  compare, L3 partial-batch surfacing); /cycles (LO-70); counterfactual ghost
+  (LO-15); closed-loop reopt trigger (LO-11); campaigns + clusters (LO-36,
+  migration 0013); telegram inline approval (LO-66); diff-review + undo
+  (LO-17/18); analytics top-pages + Critic-on-Runs + dispatch-boundary outreach
+  allowlist; quiet-by-default attention (LO-21).
+- **Irreversible Actions:** none — migrations 0012 + 0013 staged idempotent,
+  not applied.
+
+### 3. Verification & Validation
+- **Commands:** 93 pure unit tests (vitest) green; `tsc --noEmit`, `eslint`,
+  `next build`, `py_compile` all green. Adversarial review fleet (14 agents)
+  completed; every confirmed finding fixed.
+- **Resulting App State:** trunk-ready; new worker agents + credential-gated
+  integrations inert until operator sets secrets / worker host.
+- **Next Sprint Phase:** squash-merge; apply 0012/0013; then the embedding/SERP
+  intelligence engine (the remaining moat, design §0.3).
+
+## [2026-06-13 08:50:00] - Session quirky-raman-4a890e (design completion — phase 1)
 ### 1. Intent, Roles, & Context
 - **The Problem:** Add everything from the 3 parked docs (design, backlog,
   audit) to the project — update stale code to current main, build the

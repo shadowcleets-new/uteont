@@ -8,7 +8,7 @@
 
 ---
 
-## 0. Implementation Reality — as of 2026-06-12
+## 0. Implementation Reality — as of 2026-06-13
 
 > **Read this first.** The body below is the *aspirational* design. This section
 > is the ground truth: what is actually built on `main`, what diverges from the
@@ -39,9 +39,9 @@
   cycles, runs, jobs, keywords, keyword_exclusions, ideas, articles, approvals,
   notifications, agent_state, kv_settings, auth_config, login_attempts,
   conversations, messages, result_cache, targets, target_snapshots, checkpoints,
-  decision_records, **critiques**, **tactics**. NOT built: campaigns, clusters,
-  pages, job_events, task_checkpoints, idempotency_keys, publish_receipts,
-  competitor_snapshots, content_bundles, metrics_timeseries.
+  decision_records, **critiques**, **tactics**, **campaigns**, **keyword_clusters**.
+  NOT built: pages, job_events, task_checkpoints, idempotency_keys,
+  publish_receipts, competitor_snapshots, content_bundles, metrics_timeseries.
 - **The "autonomous SEO engine" (Pillars 2–4, §5) is a credential-free shadow,
   not the full engine.** `content-brief.ts` is the implemented realization of
   semantic profiling + information-gain + coverage gaps — but it is lexical
@@ -51,8 +51,9 @@
   `checkRankAndMaybeReoptimize`, and `recalibrateFromOutcomes` are **not built**.
 - **The UI is the warm-paper light theme only.** No working dark mode, no density
   toggle, no 3-zone Mission Control / PipelineLadder / RAIL-R / StatusBar, no
-  DiffViewer / LogConsole / token-stream / one-click-undo. These remain the UI
-  backlog (see §0.3).
+  LogConsole / token-stream. **DiffViewer and one-click-undo now exist** (the
+  approvals diff-review + undo toast, §0.2). Reduced-motion + a shared motion-token
+  vocabulary are in. The rest remains the UI backlog (see §0.3).
 
 ### 0.2 Capabilities added since the spec (built, not in the body below)
 
@@ -79,16 +80,42 @@
   (LO-29c)**, and a full **security-hardening pass** (constant-time secret
   compares, IP-keyed login lockout, CSRF Origin checks, setup-token hashing,
   idempotent job completion, generic error bodies — audit A-01…A-17).
+- **Campaigns + keyword clusters (LO-36).** A campaign groups themed keyword
+  clusters under one goal; `/campaigns` + `/campaigns/[id]`, tables `campaigns`
+  + `keyword_clusters` (migration 0013). `src/lib/services/campaigns.ts`.
+- **Counterfactual "no-intervention" ghost (LO-15).** The trajectory chart draws
+  a dashed baseline of where a metric would have landed with no agent action,
+  extrapolated from pre-first-intervention drift. `src/lib/services/counterfactuals.ts`.
+- **Diff-review + one-click undo (LO-17/18).** Approvals lead with a +/− line
+  diff of a proposed page edit (`src/lib/diff/line-diff.ts`); a terminal decision
+  is undoable for 5 minutes (`canUndo`, `undoCheckpoint`, undo toast).
+- **Closed-loop re-optimization trigger (LO-11).** The daily cron classifies GSC
+  per-page rows into striking-distance / decayed candidates and records each as
+  an explainable recommendation on `/decisions`. `src/lib/services/reoptimization.ts`.
+- **Quiet-by-default attention routing (LO-21).** The dashboard leads with a
+  single calm "N need you · M done" line, loud only on pending checkpoints /
+  failed runs. `src/lib/services/attention.ts`.
+- **Telegram inline plan approval (LO-66)**, **/cycles management UI (LO-70)**,
+  **Critic verdict surfaced on Runs**, and **SSRF hardening** (redirect + DNS-
+  rebinding-safe `safeFetch` across every TS and Python fetch path) +
+  **length-independent secret compare** (`safeEqualDigest`), from the adversarial
+  review pass.
 
 ### 0.3 The honest "still to build" list
 
-Closed-loop re-optimization + the metrics_timeseries substrate it needs; the
-embedding/SERP-reverse-engineering intelligence engine; receipt-based idempotent
-publishing + CMS clients; campaigns/clusters; counterfactuals, diff-review, and
-one-click undo; and the full UI system (dark mode, density, Mission Control,
-DiffViewer, LogConsole, token-streaming, undo, reduced-motion + a shared motion
-vocabulary). The credential-gated integrations (GSC/GA4/Slack) are built but inert
-until the operator sets the secrets.
+The closed-loop re-optimization *trigger* now exists (LO-11), but the
+`metrics_timeseries` substrate for full historical control, and the
+**embedding/NER/SERP-reverse-engineering intelligence engine** (the real moat —
+today's `content-brief` is its lexical shadow), remain unbuilt. Also unbuilt:
+receipt-based idempotent **publishing + CMS clients** (`publish_receipts`,
+`deployIdempotent`); the rich 13-state job machine + `job_events` audit; and the
+remaining **UI system** — dark mode, density toggle, the 3-zone Mission Control /
+PipelineLadder / RAIL-R / StatusBar shell, LogConsole, and token-streamed draft
+rendering. (DiffViewer, one-click undo, counterfactual ghost, quiet-by-default
+attention, and reduced-motion + motion tokens are now done.) The credential-gated
+integrations (GSC/GA4/Slack) are built but inert until the operator sets the
+secrets, and the new worker agents (Tactics Scraper, NotebookLM) need the worker
+host live to run.
 
 ---
 
