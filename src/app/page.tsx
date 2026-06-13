@@ -9,6 +9,7 @@ import { pickNextAction } from "@/lib/services/next-action";
 import { TargetMini } from "@/components/target-mini";
 import { NextActionCard } from "@/components/next-action-card";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { getDb } from "@/lib/db/client";
 import { kvSettings, sites } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -104,6 +105,20 @@ export default async function DashboardPage() {
   const runningCount = Object.values(stats).reduce((acc, s) => acc + (s.running ?? 0), 0);
   const implementedAgents = AGENTS.filter((a) => a.implemented).length;
 
+  // LO-21: quiet-by-default attention summary — what needs you vs what's just done.
+  let attention = { needsYou: 0, critical: 0, done: 0 };
+  try {
+    const { listCheckpoints } = await import("@/lib/services/checkpoints");
+    const { summarizeAttention } = await import("@/lib/services/attention");
+    const pending = await listCheckpoints({ status: "pending", siteId: activeSiteId ?? undefined });
+    attention = summarizeAttention({
+      checkpoints: pending.map((c) => ({ status: c.status, blastRadius: c.blastRadius })),
+      runs: recent.map((r) => ({ status: r.status })),
+    });
+  } catch {
+    /* attention is best-effort */
+  }
+
   return (
     <div className="px-9 py-8 max-w-[1100px]">
       <h1 className="text-[28px] font-semibold text-[#141413] tracking-tight mb-2">
@@ -119,6 +134,33 @@ export default async function DashboardPage() {
           <LiveStatus runningCount={runningCount} />
         </div>
       )}
+
+      {/* LO-21: quiet-by-default attention line. Loud only when something needs you. */}
+      <div className="mb-6 flex items-center gap-3 text-[13px]">
+        {attention.needsYou > 0 ? (
+          <Link
+            href="/approvals"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-medium transition-colors",
+              attention.critical > 0
+                ? "bg-[#f6e0db] text-[#a33b2b] hover:bg-[#f0d2cb]"
+                : "bg-[#f6ecd6] text-[#8a6516] hover:bg-[#efe2c2]",
+            )}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-current opacity-60 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
+            </span>
+            {attention.needsYou} need{attention.needsYou === 1 ? "s" : ""} you
+            {attention.critical > 0 && ` · ${attention.critical} high-impact`}
+          </Link>
+        ) : (
+          <span className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 bg-[#eef2e9] text-[#4a6b2f]">
+            ✓ All clear — nothing needs you
+          </span>
+        )}
+        <span className="text-[#9a988e]">{attention.done} done recently</span>
+      </div>
 
       {nextAction && (
         <div className="mb-8">
