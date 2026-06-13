@@ -6,6 +6,7 @@ import { startRun, finishRun } from "@/lib/services/runs";
 import { runPerformanceTracking } from "@/lib/agent-runners/performance-tracking";
 import { snapshotAllActiveTargets } from "@/lib/services/target-snapshots";
 import { notifySlackForSite } from "@/lib/services/slack-notify";
+import { runReoptimizationScan } from "@/lib/services/reoptimization";
 
 /**
  * Daily cron — the once-a-day heartbeat.
@@ -19,6 +20,7 @@ import { notifySlackForSite } from "@/lib/services/slack-notify";
 export async function GET() {
   let perfSites = 0;
   let perfPulled = 0;
+  let reoptCandidates = 0;
   try {
     const db = getDb();
     const rows = await db
@@ -49,6 +51,9 @@ export async function GET() {
           siteId,
           `UTEONT daily — Search Console (28d): ${result.clicks ?? 0} clicks, ${result.impressions ?? 0} impressions.`,
         ).catch(() => {});
+        // LO-11: closed-loop re-optimization — feed the fresh GSC numbers back
+        // into the pipeline by flagging underperforming pages as recommendations.
+        reoptCandidates += await runReoptimizationScan(siteId, site?.domain ?? "").catch(() => 0);
       }
     }
   } catch (e) {
@@ -62,5 +67,10 @@ export async function GET() {
     console.warn("[cron.daily] snapshot failed:", e);
   }
 
-  return NextResponse.json({ ok: true, performance: { sites: perfSites, pulled: perfPulled }, snapshots });
+  return NextResponse.json({
+    ok: true,
+    performance: { sites: perfSites, pulled: perfPulled },
+    reoptimization: { candidates: reoptCandidates },
+    snapshots,
+  });
 }
