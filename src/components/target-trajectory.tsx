@@ -30,6 +30,7 @@ export function TrajectoryChart({
   bandAtDeadline,
   direction,
   interventions = [],
+  counterfactual,
   width = 460,
   height = 120,
 }: {
@@ -43,6 +44,8 @@ export function TrajectoryChart({
   bandAtDeadline: number;
   direction: "increase" | "decrease";
   interventions?: Intervention[];
+  /** LO-15: no-intervention ghost — { fromMs, fromValue, valueAtDeadline }. */
+  counterfactual?: { fromMs: number; fromValue: number; valueAtDeadline: number } | null;
   width?: number;
   height?: number;
 }) {
@@ -56,6 +59,7 @@ export function TrajectoryChart({
 
   // y-domain spans every series so nothing clips.
   const ysAll = [baseline, goal, projected, projected + bandAtDeadline, projected - bandAtDeadline, ...obs.map((o) => o.v)];
+  if (counterfactual) ysAll.push(counterfactual.fromValue, counterfactual.valueAtDeadline);
   let yMin = Math.min(...ysAll);
   let yMax = Math.max(...ysAll);
   const padY = (yMax - yMin || Math.abs(yMax) || 1) * 0.08;
@@ -92,6 +96,17 @@ export function TrajectoryChart({
       />
       {/* goal marker */}
       <circle cx={x(deadlineMs)} cy={y(goal)} r="2.5" fill="#9a988e" />
+
+      {/* LO-15: counterfactual ghost — where the metric would land with no
+          intervention. Faint grey dashed line so the real trajectory's lift is
+          legible against "doing nothing". */}
+      {counterfactual && (
+        <line
+          x1={x(counterfactual.fromMs)} y1={y(counterfactual.fromValue)}
+          x2={x(deadlineMs)} y2={y(counterfactual.valueAtDeadline)}
+          stroke="#bdbab0" strokeWidth="1.25" strokeDasharray="1 3" opacity="0.9"
+        />
+      )}
 
       {/* confidence cone */}
       {cone && <path d={cone} fill={dirColor} fillOpacity="0.12" stroke="none" />}

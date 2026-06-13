@@ -2,6 +2,7 @@ import type { TargetWithProgress } from "@/lib/services/targets";
 import { TARGET_METRICS } from "@/lib/services/targets";
 import { linearRegression, projectRegression, regressionConfidenceLevel, type TrendPoint } from "@/lib/services/target-history";
 import type { Intervention } from "@/lib/services/run-interventions";
+import { computeCounterfactual } from "@/lib/services/counterfactuals";
 import { TargetSparkline } from "@/components/target-sparkline";
 import { TrajectoryChart } from "@/components/target-trajectory";
 import { deleteTargetAction, updateTargetAction, setTargetStatusAction, updateManualCurrentAction } from "./actions";
@@ -135,6 +136,13 @@ export function TargetCard({ t, history = [], interventions = [] }: { t: TargetW
             bandAtDeadline={band}
             direction={direction}
             interventions={interventions.filter((iv) => iv.atMs >= startMs && iv.atMs <= deadlineMs)}
+            counterfactual={computeCounterfactual({
+              history,
+              interventions,
+              baseline: t.baselineValue,
+              startMs,
+              deadlineMs,
+            })}
           />
         )}
       </div>
