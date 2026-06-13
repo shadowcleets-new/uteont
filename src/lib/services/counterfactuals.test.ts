@@ -10,7 +10,7 @@ describe("computeCounterfactual (LO-15 — no-intervention baseline)", () => {
     const history = [pt(0, 10), pt(day, 11), pt(2 * day, 12), pt(5 * day, 20)];
     const cf = computeCounterfactual({
       history,
-      interventions: [{ atMs: 2 * day, label: "x" }],
+      interventions: [{ atMs: 2 * day }],
       baseline: 10,
       startMs: 0,
       deadlineMs: 10 * day,
@@ -25,7 +25,7 @@ describe("computeCounterfactual (LO-15 — no-intervention baseline)", () => {
     const history = [pt(3 * day, 50)]; // only post-intervention data
     const cf = computeCounterfactual({
       history,
-      interventions: [{ atMs: day, label: "x" }],
+      interventions: [{ atMs: day }],
       baseline: 12,
       startMs: 0,
       deadlineMs: 10 * day,
