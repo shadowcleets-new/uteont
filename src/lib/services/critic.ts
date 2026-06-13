@@ -217,6 +217,29 @@ export async function recordCritique(input: {
 }
 // #endregion
 
+/** Map runId → latest critique verdict, for surfacing on the Runs page. Best-
+ *  effort: returns {} on any DB error so the page still renders. */
+export async function critiquesByRunIds(
+  runIds: number[],
+): Promise<Record<number, { verdict: string; recommendation: string | null }>> {
+  if (runIds.length === 0) return {};
+  try {
+    const { inArray } = await import("drizzle-orm");
+    const db = getDb();
+    const rows = await db
+      .select({ runId: critiques.runId, verdict: critiques.verdict, recommendation: critiques.recommendation })
+      .from(critiques)
+      .where(inArray(critiques.runId, runIds));
+    const out: Record<number, { verdict: string; recommendation: string | null }> = {};
+    for (const r of rows) {
+      if (r.runId != null) out[r.runId] = { verdict: r.verdict, recommendation: r.recommendation };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 // #region 5. Auto-critique orchestration
 /**
  * Distill a result blob into the text the Critic reviews. Picks the most

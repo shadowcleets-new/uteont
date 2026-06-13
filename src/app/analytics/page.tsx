@@ -20,6 +20,7 @@ import { loadGscConfig } from "@/lib/agent-runners/performance-tracking";
 import { AreaChart } from "@/components/area-chart";
 import { LineChart } from "@/components/line-chart";
 import { RankingsTable } from "@/components/rankings-table";
+import { fetchGscTopPages } from "@/lib/integrations/gsc";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -95,11 +96,20 @@ function impactFor(position: number): RankingRow["revenueImpact"] {
   return position < 5 ? "high" : position < 12 ? "medium" : "low";
 }
 
+interface PageRow {
+  page: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
 interface AnalyticsData {
   mode: "live" | "modeled";
   series: Array<Pick<SeriesPoint, "day" | "impressions" | "clicks">>;
   totals: { impressions: number; clicks: number; ctr: number; position: number | null };
   rankings: RankingRow[];
+  topPages: PageRow[]; // LO-29c — live only; [] when modeled
   revenueSeries: number[] | null; // modeled only
 }
 
@@ -119,10 +129,11 @@ async function loadAnalytics(siteId: number, range: Range): Promise<AnalyticsDat
 
   if (cfg?.propertyUrl) {
     const window = gscDateRange(Date.now(), range);
-    const [daily, summary, queries] = await Promise.all([
+    const [daily, summary, queries, pages] = await Promise.all([
       fetchGscDailySeries(cfg, window),
       fetchGscSummary(cfg, window),
       fetchGscTopQueries(cfg, window, 50),
+      fetchGscTopPages(cfg, window, 25),
     ]);
     if (daily && daily.length > 0) {
       return {
@@ -140,6 +151,13 @@ async function loadAnalytics(siteId: number, range: Range): Promise<AnalyticsDat
           ctr: q.ctr,
           impressions: Math.round(q.impressions),
           revenueImpact: impactFor(q.position),
+        })),
+        topPages: (pages ?? []).map((p) => ({
+          page: p.page,
+          clicks: Math.round(p.clicks),
+          impressions: Math.round(p.impressions),
+          ctr: p.ctr,
+          position: Math.round(p.position * 10) / 10,
         })),
         revenueSeries: null,
       };
@@ -160,6 +178,7 @@ async function loadAnalytics(siteId: number, range: Range): Promise<AnalyticsDat
       position: null,
     },
     rankings: buildRankings(range),
+    topPages: [],
     revenueSeries: series.map((p) => p.revenue),
   };
 }
@@ -308,6 +327,29 @@ export default async function AnalyticsPage({ searchParams }: PageProps) {
       </section>
 
       <RankingsTable rows={data.rankings} />
+
+      {data.topPages.length > 0 && (
+        <section className="mt-6">
+          <div className="text-[10px] font-bold tracking-wider text-[#9a988e] mb-3">TOP PAGES (LIVE · GSC)</div>
+          <div className="rounded-[10px] border border-[#e8e6dc] bg-white overflow-hidden">
+            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2 text-[10px] font-bold tracking-wider text-[#9a988e] border-b border-[#f3f1ea]">
+              <span>PAGE</span><span className="text-right">CLICKS</span><span className="text-right">IMPR.</span><span className="text-right">POS.</span>
+            </div>
+            {data.topPages.map((p) => {
+              let path = p.page;
+              try { path = new URL(p.page).pathname || "/"; } catch { /* keep raw */ }
+              return (
+                <div key={p.page} className="grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2 border-t border-[#f3f1ea] first:border-t-0 text-[12px] text-[#141413]">
+                  <a href={p.page} target="_blank" rel="noopener noreferrer" className="truncate hover:text-[#d97757]" title={p.page}>{path}</a>
+                  <span className="text-right tabular-nums">{p.clicks}</span>
+                  <span className="text-right tabular-nums text-[#6b6a64]">{p.impressions}</span>
+                  <span className="text-right tabular-nums text-[#6b6a64]">{p.position.toFixed(1)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

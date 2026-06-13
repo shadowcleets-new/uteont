@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { runs, type Run } from "@/lib/db/schema";
 import { RunCard } from "@/components/run-card";
+import { critiquesByRunIds } from "@/lib/services/critic";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,8 @@ async function fetchRuns(subject?: string): Promise<Run[]> {
 export default async function RunsPage({ searchParams }: PageProps) {
   const { subject } = await searchParams;
   const rows = await fetchRuns(subject);
+  const critiques: Record<number, { verdict: string; recommendation: string | null }> =
+    await critiquesByRunIds(rows.map((r) => r.id)).catch(() => ({}));
 
   const counts = rows.reduce(
     (acc, r) => {
@@ -85,7 +88,7 @@ export default async function RunsPage({ searchParams }: PageProps) {
             <div className="col-span-2 text-right">DURATION</div>
           </div>
           {rows.map((r) => (
-            <RunCard key={r.id} run={r} />
+            <RunCard key={r.id} run={r} critique={critiques[r.id]} />
           ))}
         </div>
       )}

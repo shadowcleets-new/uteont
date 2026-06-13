@@ -65,6 +65,24 @@ export async function dispatchAgentJob(
   await assertAgentNotPaused(input.agentKey); // operator pause (Settings) blocks dispatch
   const payload: Record<string, unknown> = { ...input.payload };
 
+  // LO-58: enforce the outreach domain allowlist at the dispatch boundary, so
+  // EVERY path (Director, run-form, API) is capped — not just the Director.
+  // Mirrors the Director's own check; an empty allowlist allows all.
+  if (input.agentKey === "backlink") {
+    try {
+      const { getOutreachAllowlist } = await import("./app-settings");
+      const { isOutreachTargetAllowed } = await import("./outreach-allowlist");
+      const allowlist = await getOutreachAllowlist();
+      const target = String(payload.targetSite ?? payload.targetEmail ?? "");
+      if (!isOutreachTargetAllowed(target, allowlist)) {
+        throw new Error(`outreach target "${target}" is not on the domain allowlist`);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not on the domain allowlist")) throw e;
+      console.warn("dispatchAgentJob: outreach allowlist check failed open", e);
+    }
+  }
+
   // Closed-loop negative feedback: ride the site's exclusion list on every
   // generative dispatch so the worker can inject a negative-constraint block.
   // Injected before the dedupe key is computed so a changed exclusion list

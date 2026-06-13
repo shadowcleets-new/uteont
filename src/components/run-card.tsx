@@ -18,6 +18,8 @@ import type { Run } from "@/lib/db/schema";
 
 interface RunCardProps {
   run: Run;
+  /** LO-59: the Critic's verdict on this run's output, if one was recorded. */
+  critique?: { verdict: string; recommendation: string | null };
 }
 
 function durationSeconds(run: Run): number | null {
@@ -75,7 +77,7 @@ function troubleshootingHint(error: string | null): string | null {
   return "Inspect the run's result payload below for the failing step's context.";
 }
 
-export function RunCard({ run }: RunCardProps) {
+export function RunCard({ run, critique }: RunCardProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dur = durationSeconds(run);
@@ -130,7 +132,20 @@ export function RunCard({ run }: RunCardProps) {
           )}
           <span className="font-medium">{run.status}</span>
         </div>
-        <div className="col-span-2 text-right text-[11px] text-[#6b6a64] tabular-nums">
+        <div className="col-span-2 text-right text-[11px] text-[#6b6a64] tabular-nums flex items-center justify-end gap-1.5">
+          {critique && (
+            <span
+              title={critique.recommendation ?? undefined}
+              className={cn(
+                "text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full",
+                critique.verdict === "serves"
+                  ? "bg-[#e7efe0] text-[#4a6b2f]"
+                  : "bg-[#f6e0db] text-[#a33b2b]",
+              )}
+            >
+              {critique.verdict === "serves" ? "✓ CRITIC" : "⚑ CRITIC"}
+            </span>
+          )}
           {fmtSeconds(dur)}
         </div>
       </button>
