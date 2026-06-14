@@ -14,6 +14,7 @@ import {
 import { logEvent } from "@/lib/observability/logger";
 import { listExclusionPhrases } from "./keyword-exclusions";
 import { filterKeywordRows } from "@/lib/agents/exclusion-filter";
+import { recordJobEvent } from "./job-events";
 
 export interface EnqueueJobInput {
   agentKey: string;
@@ -320,7 +321,10 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
 
   const rows = (result as unknown as { rows?: unknown[] }).rows ??
                (Array.isArray(result) ? result : []);
-  return (rows[0] as typeof jobs.$inferSelect | undefined) ?? null;
+  const claimed = (rows[0] as typeof jobs.$inferSelect | undefined) ?? null;
+  // IP-13 — append-only lifecycle audit (best-effort; never blocks the claim).
+  if (claimed) await recordJobEvent(claimed.id, "queued", "claimed", `worker ${workerId}`);
+  return claimed;
 }
 
 /**
@@ -338,6 +342,7 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
     .update(jobs)
     .set({ status: "done", finishedAt: new Date(), result })
     .where(eq(jobs.id, jobId));
+  await recordJobEvent(jobId, job.status, "done"); // IP-13 lifecycle audit
 
   // 2. Apply all result side-effects (identical to the pre-refactor behavior)
   const startedAt = (job.claimedAt as Date | null) ?? (job.createdAt as Date);
@@ -506,6 +511,8 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       error,
     })
     .where(eq(jobs.id, jobId));
+  // IP-13 — record the transition (a retry re-queues; otherwise it's terminal).
+  await recordJobEvent(jobId, row.status, shouldRetry ? "queued" : "failed", error.slice(0, 300));
 
   // Only write a failure run + notify if we're giving up (not retrying)
   if (!shouldRetry) {

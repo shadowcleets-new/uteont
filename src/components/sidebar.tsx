@@ -47,6 +47,7 @@ const SECTIONS: NavSection[] = [
       { label: "Articles", href: "/articles" },
       { label: "Runs", href: "/runs" },
       { label: "Decisions", href: "/decisions" },
+      { label: "Cannibalization", href: "/cannibalization" },
       { label: "Export", href: "/export" },
     ],
   },
