@@ -23,6 +23,7 @@ import {
   integer,
   real,
   boolean,
+  date,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -533,6 +534,78 @@ export const decisionRecords = pgTable(
   }),
 );
 
+/**
+ * metrics_timeseries (IP-10) — the per-(entity, metric, day) measurement
+ * substrate. GSC/GA4/rank pulls upsert one row per (site, entity, metric, day)
+ * so trend/decay/cannibalization math has memory. Idempotent on the day key:
+ * a re-run the same day overwrites, never duplicates (see the unique index in
+ * drizzle/0012). Reads are defensive (services/metrics-timeseries.ts).
+ */
+export const metricsTimeseries = pgTable(
+  "metrics_timeseries",
+  {
+    id:         serial("id").primaryKey(),
+    siteId:     integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),  // page | query | site
+    entityKey:  text("entity_key").notNull(),   // the url / query text / site key
+    metric:     text("metric").notNull(),       // clicks | impressions | ctr | position | rank | conversions | revenue | sessions
+    value:      real("value").notNull(),
+    capturedOn: date("captured_on").notNull(),  // the day this measurement belongs to (YYYY-MM-DD)
+    createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byEntity: index("metrics_timeseries_entity_idx").on(t.siteId, t.entityKey, t.capturedOn),
+    byMetric: index("metrics_timeseries_metric_idx").on(t.siteId, t.metric, t.capturedOn),
+    uniqDay:  uniqueIndex("metrics_timeseries_day_unique_idx").on(
+      t.siteId, t.entityType, t.entityKey, t.metric, t.capturedOn,
+    ),
+  }),
+);
+
+/**
+ * job_events (IP-13) — an append-only audit of every job status transition, so
+ * a failure is forensically legible. Emitted on claim/complete/fail in
+ * services/jobs.ts; surfaced in the run console. Defensive reads.
+ */
+export const jobEvents = pgTable(
+  "job_events",
+  {
+    id:         serial("id").primaryKey(),
+    jobId:      integer("job_id").notNull(),
+    fromStatus: text("from_status"),
+    toStatus:   text("to_status").notNull(),
+    reason:     text("reason"),
+    at:         timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byJob: index("job_events_job_idx").on(t.jobId),
+  }),
+);
+
+/**
+ * publish_receipts (IP-07) — the optimistic-concurrency record per
+ * (article, target). decidePublishAction compares the incoming content hash /
+ * revision against the stored receipt to converge each CMS to exactly one live
+ * object (noop | create | update). One row per (article_id, target_id).
+ */
+export const publishReceipts = pgTable(
+  "publish_receipts",
+  {
+    id:          serial("id").primaryKey(),
+    articleId:   integer("article_id").notNull(),
+    revision:    integer("revision").notNull().default(1),
+    targetId:    text("target_id").notNull(),
+    contentHash: text("content_hash").notNull(),
+    remoteId:    text("remote_id"),
+    status:      text("status").notNull().default("published"),  // published | failed | pending
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byArticle: index("publish_receipts_article_idx").on(t.articleId),
+    uniqTarget: uniqueIndex("publish_receipts_article_target_unique_idx").on(t.articleId, t.targetId),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -555,3 +628,6 @@ export type Target = typeof targets.$inferSelect;
 export type TargetSnapshot = typeof targetSnapshots.$inferSelect;
 export type Checkpoint = typeof checkpoints.$inferSelect;
 export type DecisionRecord = typeof decisionRecords.$inferSelect;
+export type MetricTimeseries = typeof metricsTimeseries.$inferSelect;
+export type JobEvent = typeof jobEvents.$inferSelect;
+export type PublishReceipt = typeof publishReceipts.$inferSelect;
