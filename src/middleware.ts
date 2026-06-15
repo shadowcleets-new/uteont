@@ -138,6 +138,10 @@ export default nextAuth(async (req) => {
 });
 
 export const config = {
-  // Run on everything except Next static assets + favicon.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$).*)"],
+  // Run on everything except Next static assets + favicon, AND except
+  // /api/auth/* — NextAuth's own routes must NOT pass through the auth()
+  // wrapper, which re-issues (rolls) the session cookie on every request.
+  // On /api/auth/signout that re-issue overrode the route handler's
+  // cookie-clear, so signing out then refreshing logged the user back in.
+  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$).*)"],
 };
