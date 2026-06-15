@@ -23,6 +23,7 @@ import {
   integer,
   real,
   boolean,
+  date,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -533,6 +534,58 @@ export const decisionRecords = pgTable(
   }),
 );
 
+/**
+ * metrics_timeseries (IP-10) — the per-(page|query|site) measurement substrate.
+ * One row per (site, entity_type, entity_key, metric, day); upserts are idempotent
+ * on that key so a same-day cron re-run overwrites rather than duplicating. This is
+ * the memory the trend / decay / re-optimization math reads (services/metrics-timeseries.ts).
+ * Defensive reads degrade to empty until migration 0012 is applied.
+ */
+export const metricsTimeseries = pgTable(
+  "metrics_timeseries",
+  {
+    id:         serial("id").primaryKey(),
+    siteId:     integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),   // page | query | site
+    entityKey:  text("entity_key").notNull(),
+    metric:     text("metric").notNull(),         // clicks | impressions | ctr | position | rank | conversions | revenue
+    value:      real("value").notNull(),
+    capturedOn: date("captured_on").notNull(),
+    createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byEntity: index("metrics_timeseries_entity_idx").on(t.siteId, t.entityKey, t.metric),
+    byDay:    index("metrics_timeseries_day_idx").on(t.siteId, t.capturedOn),
+    uniqDay:  uniqueIndex("metrics_timeseries_unique_idx").on(t.siteId, t.entityType, t.entityKey, t.metric, t.capturedOn),
+  }),
+);
+
+/**
+ * publish_receipts (IP-07) — the idempotent-publishing ledger. For a fixed
+ * (article, revision, target) the system converges to exactly one live remote
+ * object; decidePublishAction (services/publish-decision.ts) reads the latest
+ * receipt to choose noop|create|update so a replayed publish never duplicates.
+ * Defensive reads degrade to empty until migration 0013 is applied.
+ */
+export const publishReceipts = pgTable(
+  "publish_receipts",
+  {
+    id:          serial("id").primaryKey(),
+    articleId:   integer("article_id").notNull(),
+    revision:    integer("revision").notNull().default(1),
+    targetId:    text("target_id").notNull(),      // CMS / integration target identifier
+    contentHash: text("content_hash").notNull(),
+    remoteId:    text("remote_id"),
+    status:      text("status").notNull().default("pending"),  // pending | live | failed
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byArticle: index("publish_receipts_article_idx").on(t.articleId),
+    byTarget:  uniqueIndex("publish_receipts_article_target_unique_idx").on(t.articleId, t.targetId, t.revision),
+  }),
+);
+
 export type Site = typeof sites.$inferSelect;
 export type SiteIntegration = typeof siteIntegrations.$inferSelect;
 export type Cycle = typeof cycles.$inferSelect;
@@ -555,3 +608,5 @@ export type Target = typeof targets.$inferSelect;
 export type TargetSnapshot = typeof targetSnapshots.$inferSelect;
 export type Checkpoint = typeof checkpoints.$inferSelect;
 export type DecisionRecord = typeof decisionRecords.$inferSelect;
+export type MetricsTimeseriesRow = typeof metricsTimeseries.$inferSelect;
+export type PublishReceiptRow = typeof publishReceipts.$inferSelect;

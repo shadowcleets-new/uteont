@@ -1,0 +1,6 @@
+#!/bin/sh
+# Pre-commit guard (IP-25) — secret + env scan before anything enters history.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Mirrors the CI gitleaks job locally so a leak is caught at commit time, not
+# after a push. Bypassing with --no-verify still hits the CI gitleaks backstop.
+node scripts/check-secrets.mjs || exit 1
