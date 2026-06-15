@@ -14,12 +14,9 @@
  * Everything else: requires a NextAuth session, else redirect to /login.
  */
 
-import NextAuth from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { NextResponse, type NextRequest } from "next/server";
-import { authConfig } from "@/auth.config";
 import { safeEqualDigest } from "@/lib/crypto/digest-equal";
-
-const { auth: nextAuth } = NextAuth(authConfig);
 
 function unauthorized(reason: string) {
   return NextResponse.json({ error: "unauthorized", reason }, { status: 401 });
@@ -108,7 +105,7 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 }
 
-export default nextAuth(async (req) => {
+export default async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
   // 1. Service routes first — they have their own auth (Bearer / secret header)
@@ -125,17 +122,27 @@ export default nextAuth(async (req) => {
   // 3. Public paths — no auth required.
   if (isPublic(pathname)) return NextResponse.next();
 
-  // 3. Everything else requires a NextAuth session.
-  //    req.auth is populated by the nextAuth() wrapper from the JWT cookie.
-  if (req.auth?.user) return NextResponse.next();
+  // 4. Everything else requires a valid session. Use getToken (READ-ONLY): it
+  //    decrypts + validates the session JWT but does NOT rotate/re-issue the
+  //    cookie. The auth() middleware wrapper rotates the session cookie on
+  //    every request, which revived the just-deleted cookie right after
+  //    sign-out (sign-out-then-refresh re-login bug). secureCookie/salt track
+  //    the request protocol so the prod `__Secure-` cookie decodes correctly.
+  const secureCookie = req.url.startsWith("https://");
+  const token = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET,
+    secureCookie,
+  });
+  if (token) return NextResponse.next();
 
-  // 4. Not logged in → redirect to clean /login URL (no `next` param, to
+  // 5. Not logged in → redirect to clean /login URL (no `next` param, to
   //    avoid leaking the intended route in the address bar).
   const loginUrl = req.nextUrl.clone();
   loginUrl.pathname = "/login";
   loginUrl.search = "";
   return NextResponse.redirect(loginUrl);
-});
+}
 
 export const config = {
   // Run on everything except Next static assets + favicon, AND except
