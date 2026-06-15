@@ -26,7 +26,7 @@ function DiffView({ before, after }: { before: string; after: string }) {
             className={cn(
               "px-3 whitespace-pre-wrap",
               l.kind === "add" && "bg-[#eef5e8] text-[#3d6b35]",
-              l.kind === "remove" && "bg-[#fbeea] text-[#a33b2b]",
+              l.kind === "remove" && "bg-[#f6e0db] text-[#a33b2b]",
               l.kind === "context" && "text-[#6b6a64]",
             )}
           >
