@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AGENTS } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
-import { signOutAction } from "@/app/logout/actions";
+import { signOut } from "next-auth/react";
 import { SiteSelector } from "@/components/site-selector";
 
 interface NavItem {
@@ -106,14 +106,13 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-[#e8e6dc] px-5 py-4">
-        <form action={signOutAction}>
-          <button
-            type="submit"
-            className="text-[12px] text-[#6b6a64] hover:text-[#a33b2b] transition-colors"
-          >
-            Sign out
-          </button>
-        </form>
+        <button
+          type="button"
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="text-[12px] text-[#6b6a64] hover:text-[#a33b2b] transition-colors"
+        >
+          Sign out
+        </button>
       </div>
     </aside>
   );
