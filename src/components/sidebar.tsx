@@ -50,6 +50,7 @@ const SECTIONS: NavSection[] = [
       { label: "Tactics", href: "/tactics" },
       { label: "Runs", href: "/runs" },
       { label: "Decisions", href: "/decisions" },
+      { label: "Cannibalization", href: "/cannibalization" },
       { label: "Export", href: "/export" },
     ],
   },

@@ -71,6 +71,47 @@
   operator secrets / the worker host; everything else live on merge.
 - **Next Sprint Phase:** re-run the adversarial-review fleet (rate-limited),
   apply 0012 to Neon, squash-merge.
+## [2026-06-14 15:25:00] - Session thirsty-satoshi-0601ab (IMPROVEMENT_PLAN: moat + foundations)
+### 1. Intent, Roles, & Context
+- **The Problem:** Execute the holistic IMPROVEMENT_PLAN. A prior workflow
+  produced the TS pure-cores but left 2 Python impls missing, nothing wired,
+  and no gate run. Consolidate it into a verified, committed increment.
+- **Specialist Personas Invoked:** SEO Intelligence Architect; Enterprise DB
+  Architect (additive idempotent migrations); QA/Verification Lead;
+  Python resilience engineer.
+- **The Strategy:** Finish the orphaned cores, get every layer green
+  (tsc/eslint/vitest/build + py_compile/py tests), then wire the cores into
+  live surfaces (daily cron, jobs lifecycle, a new page) without breaking the
+  build, and commit in logical units.
+
+### 2. Surgical Technical Modifications
+- **New tables + idempotent migrations (0012–0014):** metrics_timeseries
+  (IP-10), job_events (IP-13), publish_receipts (IP-07); registered in
+  `verify-migration.mjs` EXPECTED.
+- **New pure cores (TS, tested):** information-gain (IP-04), cannibalization
+  (IP-42), reopt-triggers (IP-06), metrics-timeseries (IP-10), job-events
+  (IP-13), publishing (IP-07), cost-ledger (IP-14), flags (IP-36), redact-pii
+  (IP-65), content-safety (IP-90).
+- **New worker cores (Python, tested):** lib/fetcher.py (IP-15, written),
+  semantic_agent/profile.py (IP-03, written), trends_agent/scoring.py (IP-01),
+  serp_agent/parse.py (IP-02).
+- **Wiring:** `cron/daily` now stores GSC/GA4 metrics as a time series +
+  runs the cannibalization scan; `jobs.ts` emits job_events on every
+  transition; `gsc.ts` gains a per-(page,query) fetcher; new `/cannibalization`
+  page + sidebar link.
+- **Irreversible Actions:** none. Migrations are additive (IF NOT EXISTS),
+  NOT applied (operator-gated per F-034). No push/deploy performed.
+
+### 3. Verification & Validation
+- **Commands:** `npx tsc --noEmit` (clean) · `npx vitest run`
+  (336 passing / +99 new; the 25 fails are the pre-existing live-DB suites
+  on unset DATABASE_URL — IP-33's scope, unchanged) · `npx eslint`
+  (0 errors, 2 cosmetic warnings) · `next build` (success, /cannibalization
+  rendered) · all `worker/**/*_test.py` pass + `py_compile` clean.
+- **Resulting App State:** every new DB read is defensive — missing
+  (unapplied) tables degrade to empty, never crash.
+- **Next Sprint Phase:** operator applies migrations 0012–0014 + deploys;
+  then IP-05 (synthesis), IP-17 (SSE), IP-20 (design tokens), IP-32 (E2E).
 
 ## [2026-06-12 09:15:00] - Session quirky-raman-4a890e (trunk integration)
 ### 1. Intent, Roles, & Context

@@ -332,3 +332,50 @@ export async function fetchGscTopPages(
   }
   return null;
 }
+
+export interface GscPageQueryRow {
+  page: string;
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+/** searchAnalytics.query body for per-(page, query) rows (cannibalization, IP-42). */
+export function buildSearchAnalyticsBodyByPageQuery(range: DateRange, limit = 1000): Record<string, unknown> {
+  return { startDate: range.startDate, endDate: range.endDate, dimensions: ["page", "query"], rowLimit: limit };
+}
+
+/** Map a by-(page, query) response to typed rows. [] on anything malformed. */
+export function parsePageQueryRows(apiJson: unknown): GscPageQueryRow[] {
+  const rows = (apiJson as { rows?: KeyedRow[] })?.rows ?? [];
+  return rows
+    .filter(
+      (r) => Array.isArray(r.keys) && typeof r.keys[0] === "string" && typeof r.keys[1] === "string",
+    )
+    .map((r) => ({
+      page: r.keys![0],
+      query: r.keys![1],
+      clicks: r.clicks ?? 0,
+      impressions: r.impressions ?? 0,
+      ctr: r.ctr ?? 0,
+      position: r.position ?? 0,
+    }));
+}
+
+/** End-to-end: refresh token → per-(page, query) rows (feeds the cannibalization scan). null on any failure. */
+export async function fetchGscPageQueryRows(
+  cfg: GscConfig,
+  range: DateRange = gscDateRange(Date.now()),
+  limit = 1000,
+): Promise<GscPageQueryRow[] | null> {
+  const accessToken = await refreshAccessToken(cfg.refreshToken);
+  if (!accessToken) return null;
+  const body = buildSearchAnalyticsBodyByPageQuery(range, limit);
+  for (const property of candidatePropertyUrls(cfg.propertyUrl)) {
+    const json = await querySearchAnalytics(property, accessToken, body);
+    if (json != null) return parsePageQueryRows(json);
+  }
+  return null;
+}
