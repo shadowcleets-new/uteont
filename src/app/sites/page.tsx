@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteSiteButton } from "./delete-site-button";
 import { listSites } from "@/lib/services/sites";
 import { getDb } from "@/lib/db/client";
 import { siteIntegrations } from "@/lib/db/schema";
@@ -44,7 +45,8 @@ export default async function SitesPage() {
                 <td>{s.status}</td>
                 <td>
                   <Link href={`/sites/${s.key}`} className="underline mr-3">Open</Link>
-                  <Link href={`/sites/${s.key}/edit`} className="underline">Edit</Link>
+                  <Link href={`/sites/${s.key}/edit`} className="underline mr-3">Edit</Link>
+                  <DeleteSiteButton id={s.id} name={s.name} />
                 </td>
               </tr>
             ))}
