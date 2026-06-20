@@ -58,3 +58,6 @@ drizzle/.cache/
 
 .vercel
 .env*.local
+
+# playwright-mcp page/console captures — may contain live form data (passwords). Never commit.
+.playwright-mcp/
