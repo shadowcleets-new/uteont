@@ -1,7 +1,20 @@
 import { NextResponse } from "next/server";
-import { sql } from "drizzle-orm";
+import { sql, is } from "drizzle-orm";
+import { PgTable, getTableConfig } from "drizzle-orm/pg-core";
 import { getDb } from "@/lib/db/client";
+import * as schema from "@/lib/db/schema";
 import { auth } from "@/auth";
+
+// Single source of truth: derive the expected table set from the Drizzle schema
+// itself, so this drift-detector can NEVER fall behind schema.ts. The previous
+// hand-maintained list omitted 7 real tables (checkpoints, decision_records,
+// job_events, keyword_exclusions, metrics_timeseries, publish_receipts,
+// target_snapshots), so it reported ok:true during the exact migration drift it
+// exists to catch. (N-08)
+const EXPECTED_TABLES = Object.values(schema)
+  .filter((v) => is(v, PgTable))
+  .map((t) => getTableConfig(t as PgTable).name)
+  .sort();
 
 /**
  * Auth-gated DB schema health check. Useful for catching migration drift
@@ -15,27 +28,6 @@ export async function GET() {
   if (!session?.user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-
-  const EXPECTED_TABLES = [
-    "agent_state",
-    "approvals",
-    "articles",
-    "auth_config",
-    "conversations",
-    "cycles",
-    "ideas",
-    "jobs",
-    "keywords",
-    "kv_settings",
-    "login_attempts",
-    "messages",
-    "notifications",
-    "result_cache",
-    "runs",
-    "site_integrations",
-    "sites",
-    "targets",
-  ];
 
   try {
     const db = getDb();
@@ -64,7 +56,7 @@ export async function GET() {
       migrationsApplied: (migList as Array<{ id: number; hash: string }>).length,
       hint:
         missing.length > 0
-          ? "Run `npm run db:migrate` locally to apply pending migrations."
+          ? "Schema drift: tables missing. The drizzle journal is truncated at 0009, so `db:migrate` will NOT create 0010–0014 (N-02) — sync with `npm run db:push` or apply the raw drizzle/00*.sql, then re-check."
           : undefined,
     });
   } catch (e) {

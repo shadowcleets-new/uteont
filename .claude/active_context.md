@@ -4,10 +4,11 @@
 > Keep ≤100 lines.
 
 ## 1. Current Focus
-**IMPROVEMENT_PLAN — moat + foundations landed (2026-06-14).** A verified,
-committed increment of the plan's highest-value spine is on
-`claude/thirsty-satoshi-0601ab` (5 commits, a23a1ab→b356c13). Not yet pushed;
-migrations not yet applied.
+**Remediation (2026-06-20).** A 7-dimension audit produced `REMEDIATION_PLAN.md`
+(36 findings: 2 critical, 7 high). Wave 0 in progress — N-01/N-03/N-08 landed +
+verified (tsc clean; jobs-idempotency.test.ts 3/3 + dispatch 2/2 pass). Branch
+still not pushed; migrations 0010–0014 still unapplied. Prior: IMPROVEMENT_PLAN
+moat+foundations on this branch (a23a1ab→b356c13).
 
 ## 2. Current Milestone Status
 - Implemented + fully gated (tsc/eslint/vitest/build + py tests):
@@ -39,6 +40,8 @@ migrations not yet applied.
   IP-05/17/20) is still ahead — only the pure cores + substrate exist.
 
 ## 5. Next Immediate Steps
-1. Operator: apply migrations 0012–0014; push branch + deploy.
-2. IP-05 (gap-driven synthesis) + wire IP-04 into the content-brief runner.
-3. IP-17 (SSE streaming) and IP-20 (design tokens + dark mode).
+1. Wave 0 remainder: N-02/N-07 (regenerate drizzle journal 0010–0014), then
+   operator applies migrations + pushes branch.
+2. Wave 1: error boundaries (N-04/N-12/N-13/N-20), budget cap + flag gate
+   (N-06/N-25), login-DoS (N-10). See REMEDIATION_PLAN.md.
+3. Operator: rotate admin password (SEC-1) + point `.env.local` off prod (SEC-2).

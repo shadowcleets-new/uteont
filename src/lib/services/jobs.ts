@@ -1,4 +1,4 @@
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, and, notInArray } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
@@ -204,18 +204,23 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
     .returning();
 
   // 2. Agent-specific persistence (each wrapped — a typed-table issue must not
-  //    roll back the runs row).
-  try {
-    if (input.agentKey === "research") {
-      await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
-    } else if (input.agentKey === "idea-generation") {
-      await persistIdeas(input.cycleId, input.result);
-    } else if (input.agentKey === "content-writing") {
-      await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
+  //    roll back the runs row). Real jobs only: a cached replay (jobId == null)
+  //    must NOT re-insert articles/ideas/keywords the original job already
+  //    persisted — on a replay the telemetry runs row above is the only storage
+  //    effect. (N-03; mirrors the checkpoint guard below.)
+  if (input.jobId != null) {
+    try {
+      if (input.agentKey === "research") {
+        await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
+      } else if (input.agentKey === "idea-generation") {
+        await persistIdeas(input.cycleId, input.result);
+      } else if (input.agentKey === "content-writing") {
+        await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
+      }
+      // outreach/backlink: result captured in runs.result; no typed table v1.
+    } catch (e) {
+      console.warn(`applyJobResult: agent-persist failed for ${input.agentKey}`, e);
     }
-    // outreach/backlink: result captured in runs.result; no typed table v1.
-  } catch (e) {
-    console.warn(`applyJobResult: agent-persist failed for ${input.agentKey}`, e);
   }
 
   // 2.5 Enqueue an approval checkpoint for gated outputs so finished work that
@@ -337,11 +342,18 @@ export async function completeJob(jobId: number, result: Record<string, unknown>
   const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   if (!job) return;
 
-  // 1. Mark job done
-  await db
+  // 1. Mark job done — atomically, and ONLY from a non-terminal state. A worker
+  //    whose /complete call timed out or 5xx'd AFTER the server committed will
+  //    retry (fail_job re-queues) or re-deliver; without this guard the
+  //    side-effects below (runs row, persisted articles/ideas/keywords,
+  //    checkpoint, Telegram notify) run a second time and duplicate data. The
+  //    conditional UPDATE ... RETURNING also closes the concurrent-complete race. (N-01)
+  const transitioned = await db
     .update(jobs)
     .set({ status: "done", finishedAt: new Date(), result })
-    .where(eq(jobs.id, jobId));
+    .where(and(eq(jobs.id, jobId), notInArray(jobs.status, ["done", "failed"])))
+    .returning({ id: jobs.id });
+  if (transitioned.length === 0) return; // already terminal — idempotent no-op
   await recordJobEvent(jobId, job.status, "done"); // IP-13 lifecycle audit
 
   // 2. Apply all result side-effects (identical to the pre-refactor behavior)
@@ -501,7 +513,12 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
   const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   if (!row) return;
   const shouldRetry = retry && row.attempts < row.maxAttempts;
-  await db
+  // Terminal-state guard (N-01): never resurrect a job that already reached a
+  // terminal state. A worker whose /complete call timed out AFTER the server
+  // committed retries via fail_job(retry=true); without this, that stale failure
+  // would flip a 'done' job back to 'queued' and it would run a second time. The
+  // conditional UPDATE ... RETURNING also closes the complete/fail race.
+  const transitioned = await db
     .update(jobs)
     .set({
       status: shouldRetry ? "queued" : "failed",
@@ -510,7 +527,9 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       finishedAt: shouldRetry ? null : new Date(),
       error,
     })
-    .where(eq(jobs.id, jobId));
+    .where(and(eq(jobs.id, jobId), notInArray(jobs.status, ["done", "failed"])))
+    .returning({ id: jobs.id });
+  if (transitioned.length === 0) return; // already terminal — idempotent no-op
   // IP-13 — record the transition (a retry re-queues; otherwise it's terminal).
   await recordJobEvent(jobId, row.status, shouldRetry ? "queued" : "failed", error.slice(0, 300));
 
