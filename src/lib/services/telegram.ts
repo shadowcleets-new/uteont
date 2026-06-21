@@ -44,8 +44,15 @@ export async function sendMessage(opts: SendOptions): Promise<boolean> {
   const body: Record<string, unknown> = {
     chat_id: chatId,
     text: opts.text,
-    parse_mode: opts.parseMode ?? "Markdown",
   };
+  // Plain text by DEFAULT — parse_mode is opt-in. Telegram's Markdown/HTML
+  // parsers reject with 400 "can't parse entities" on arbitrary content: URLs
+  // with underscores (e.g. the base64url /setpassword-url setup token), LLM/
+  // Director output, keyword names. Command + Director replies pass no
+  // parseMode and so go out as plain text and always deliver. Callers that
+  // format intentionally (notify-job, password-change alert, callback ack)
+  // pass parseMode explicitly and are unaffected.
+  if (opts.parseMode) body.parse_mode = opts.parseMode;
 
   if (opts.buttons && opts.buttons.length > 0) {
     body.reply_markup = {
