@@ -14,6 +14,7 @@
  *   - kv_settings     Generic app settings KV
  */
 
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -197,6 +198,13 @@ export const keywordExclusions = pgTable(
   },
   (t) => ({
     bySite: index("keyword_exclusions_site_idx").on(t.siteId),
+    // Case-insensitive uniqueness per site (collapses "Sale"/"sale"). Expression
+    // index — was hand-written in migration 0011 because schema.ts didn't model
+    // it; declared here so schema.ts is the single source of truth. (N-07)
+    byPhrase: uniqueIndex("keyword_exclusions_site_phrase_unique_idx").on(
+      t.siteId,
+      sql`lower(${t.phrase})`,
+    ),
   }),
 );
 

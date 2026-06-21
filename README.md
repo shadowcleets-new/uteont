@@ -127,9 +127,9 @@ Authenticated (middleware enforces `Authorization: Bearer <secret>`):
 `approvals`, `notifications`, `agent_state`, `kv_settings`.
 
 ```bash
-npm run db:generate    # generate SQL from schema changes
-npm run db:push        # apply directly to DB (dev)
-npm run db:migrate     # apply migrations (prod)
+npm run db:generate    # generate a migration SQL file from schema changes
+npm run db:push        # sync schema into an EXISTING db (diffs live, applies the delta — safe/idempotent)
+npm run db:migrate     # run migrations on a NEW/empty db only (journal is authoritative through 0010)
 npm run db:studio      # browse data in a local UI
 ```
 

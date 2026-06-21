@@ -160,8 +160,10 @@ Today's monitoring is minimal:
 # Pull latest secrets (writes .env.local)
 vercel env pull .env.local
 
-# Apply latest migrations
-npm run db:migrate
+# Sync the DB schema. Use db:push for an EXISTING database (it diffs the live
+# schema and applies only what's missing — safe, idempotent). Use db:migrate
+# only when provisioning a brand-new/empty database.
+npm run db:push
 
 # Start dev server
 npm run dev

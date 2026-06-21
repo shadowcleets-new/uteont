@@ -122,11 +122,12 @@ duplicates published content, approvals, and notifications on any slow/flaky com
 - [x] **N-03 dedup replay** ✅ DONE *(2026-06-20)* — skip domain-table persistence when `jobId == null`.
   File: `jobs.ts:89-101,208-215`. *Done when:* a cache HIT inserts no new
   articles/ideas/keywords (test).
-- [ ] **N-02 + N-07 migration journal** *(engineer regenerates, operator applies)* — reconcile
-  the journal: regenerate 0010–0014 via `drizzle-kit generate` (or delete the hand-written
-  files and let generate own them); stop documenting `db:migrate` until clean.
-  *Done when:* `_journal.json` lists 0010–0014 and a fresh `migrate` on an empty DB creates
-  all 25 tables exactly once.
+- [x] **N-02 + N-07 migration journal** ✅ DONE *(2026-06-21; operator applies to live DB)* —
+  modelled the missing `lower(phrase)` expression index in schema.ts, then consolidated the
+  5 orphaned hand-written migrations into a journaled `0010_engine_reconcile.sql` (+ snapshot).
+  Journal now authoritative through 0010, so `generate` no longer collides and `migrate` works
+  on a fresh DB. Docs updated (push vs migrate). **Operator:** apply to the live DB with
+  `npm run db:push` (safe/idempotent). *Done when:* `/api/db-status` shows zero missing tables.
 - [x] **N-08 db-status detector** ✅ DONE *(2026-06-20)* — `EXPECTED_TABLES` now derived from the
   Drizzle schema via `getTableConfig` (stronger than copying a list — can't drift again).
   File: `db-status/route.ts`. Misleading `db:migrate` hint also corrected (points to `db:push`).
