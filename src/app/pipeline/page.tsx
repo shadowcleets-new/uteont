@@ -34,7 +34,10 @@ const EMPTY_SNAPSHOT_STATE = derivePipelineState({
 
 export default async function PipelinePage({ searchParams }: PageProps) {
   const sp = await searchParams;
-  const requestedId = sp.cycleId ? Number(sp.cycleId) : null;
+  // N-12: guard against a non-numeric ?cycleId (Number("abc") = NaN), which
+  // would reach the serial-int column and throw an unhandled 500.
+  const parsedId = sp.cycleId ? Number(sp.cycleId) : NaN;
+  const requestedId = Number.isInteger(parsedId) ? parsedId : null;
   const cycleId = requestedId ?? (await getMostRecentCycleId());
 
   const state = cycleId ? await getPipelineState(cycleId) : EMPTY_SNAPSHOT_STATE;

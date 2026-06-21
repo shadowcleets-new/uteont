@@ -17,13 +17,21 @@ import type { Run } from "@/lib/db/schema";
 export const dynamic = "force-dynamic";
 
 async function getActiveSiteIdServer(): Promise<number | null> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(kvSettings)
-    .where(eq(kvSettings.key, "ui.activeSiteId"))
-    .limit(1);
-  return row ? (row.value as { id: number | null }).id : null;
+  // N-13: degrade on DB error instead of rejecting the whole Promise.all and
+  // white-screening the dashboard (which would also hide the very "DB
+  // unreachable" indicator this page is meant to show).
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select()
+      .from(kvSettings)
+      .where(eq(kvSettings.key, "ui.activeSiteId"))
+      .limit(1);
+    return row ? (row.value as { id: number | null }).id : null;
+  } catch (e) {
+    console.warn("getActiveSiteIdServer failed; defaulting to no active site", e);
+    return null;
+  }
 }
 
 async function getSystemStatus() {
