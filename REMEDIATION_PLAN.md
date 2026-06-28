@@ -2,20 +2,21 @@
 
 **Generated:** 2026-06-20 · **Branch:** `claude/thirsty-satoshi-0601ab`
 
-> ### Progress — 2026-06-22 (all engineer/Claude items resolved)
-> Every code finding below is now fixed and committed on this branch (`bcc09bb`,
-> `8f2b761`, `c54f60c`, `7b9b8ca`, `d077b97`, `a7003ae`, `6466c8b`), on top of the
-> earlier Wave 0 + N-04/N-12/N-13/N-20 work. `tsc --noEmit` clean, worker
-> `pytest` 32 pass, Vitest 394 pass. The only 5 "failing" Vitest cases are
-> live-DB integration tests that need migration **0011** applied first (they
-> insert into the real `jobs` table, which lacks `scheduled_at` until then).
-> **N-26** (content-safety wiring) stays deferred — no live publish executor to
-> attach it to yet. **DOC-1** is left to the operator: `GAPS_REPORT.md`'s own
-> policy forbids autonomous edits ("update the gaps report" required).
+> ### Progress — 2026-06-22 (all engineer/Claude items resolved + merged to main)
+> Every code finding below is fixed and **merged into `main`** (merge `896f488`,
+> integrating the remediation branch with main's parallel work). DOC-1 reconciled.
+> `tsc --noEmit` clean, worker `pytest` 32 pass, Vitest 487 pass. The only 4
+> "failing" Vitest cases are live-DB integration tests that need the `scheduled_at`
+> column applied first (they insert into the real `jobs` table, which lacks it
+> until `db:push` runs). A few fixes were **superseded by main's parallel work**
+> and dropped as duplicates: N-10 (main's IP-keyed lockout), N-18 (main's hashed +
+> constant-time setup token). **N-26** (content-safety wiring) stays deferred — no
+> live publish executor yet.
 >
-> **Operator actions still required** (cannot be done in-repo):
-> 1. Apply migration **0011** to the DB (`npm run db:push`) **before** this
->    branch deploys — else job enqueue breaks (F-034-class hazard).
+> **Operator actions still required** (cannot be done in-repo) — full click-by-click
+> steps are in `OPERATIONS.md`:
+> 1. Apply the `scheduled_at` column to the DB (`npm run db:push` from the `uteont`
+>    folder) **before** deploying — else job enqueue breaks (F-034-class hazard).
 > 2. Rotate the admin password (SEC-1) and prod Neon creds + encryption key (SEC-2).
 > 3. Run `npm install` once so the pre-commit hook activates (F-032).
 > 4. Run the Neon backup-restore drill (F-026).

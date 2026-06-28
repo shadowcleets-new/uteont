@@ -202,11 +202,13 @@ Coverage today is intentionally minimal (password policy only). Add tests when y
 | Tail Vercel logs | `vercel logs --follow` |
 | Pull production env | `vercel env pull .env.local --environment=production` |
 
-## Operator Runbook — releasing branch `claude/thirsty-satoshi-0601ab` (2026-06-22)
+## Operator Runbook — releasing the remediation work (2026-06-22)
 
-Beginner-friendly, click-by-click. Do the four steps **in order** (Step 1 before
-Step 2 — explained in Step 2). If anything on screen doesn't match what's written
-here, stop and ask before clicking.
+The remediation fixes are now merged into `main` and live in the single project
+folder `C:\Users\acer\.claude\projects\uteont` (no more worktrees). Beginner-
+friendly, click-by-click. Do the four steps **in order** (Step 1 before Step 2 —
+explained in Step 2). If anything on screen doesn't match what's written here,
+stop and ask before clicking.
 
 ### Opening PowerShell (you'll need it for Steps 1 and 3)
 
@@ -219,17 +221,18 @@ here, stop and ask before clicking.
 5. Type or paste this line, then press **Enter** — it moves you into the project
    folder:
    ```powershell
-   cd "C:\Users\acer\.claude\projects\uteont\.claude\worktrees\thirsty-satoshi-0601ab"
+   cd "C:\Users\acer\.claude\projects\uteont"
    ```
    The start of the line should now show that long path. If it says *"Cannot find
    path"*, stop and tell me — don't continue.
 
 ---
 
-### STEP 1 — Add the new database column (migration 0011)
+### STEP 1 — Add the new database column (`scheduled_at`)
 
 *Goal: add the `scheduled_at` column the new code needs. Without it, creating jobs
-breaks. This runs against **production**, which is correct — that's why it's first.*
+breaks. `db:push` reads the column from the code's schema and adds it to the live
+database. This runs against **production**, which is correct — that's why it's first.*
 
 1. In the PowerShell window (still in the project folder from above), type and Enter:
    ```powershell
@@ -376,4 +379,4 @@ Once **1** and **2** are done, this branch is safe to merge/deploy.
 ## Document control
 
 This file is updated by the operator when procedures change. Most-recent change:
-added the 2026-06-22 release runbook for branch `claude/thirsty-satoshi-0601ab`.
+added the 2026-06-22 release runbook (remediation work merged into `main`).
