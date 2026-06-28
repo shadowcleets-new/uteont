@@ -66,9 +66,10 @@ export function redactPII(text: string): string {
       countDigits(match) >= MIN_PHONE_DIGITS ? PHONE_TOKEN : match,
     );
   } catch {
-    // Defensive: never throw caller-side. Fail closed on the raw input only if
-    // truly unexpected (regex engine errors are not expected for valid strings).
-    return text;
+    // Defensive: never throw caller-side and never leak the raw input. On any
+    // unexpected internal failure we fail CLOSED by returning an empty-safe
+    // value rather than the unredacted source text.
+    return "";
   }
 }
 

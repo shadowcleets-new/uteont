@@ -209,6 +209,14 @@ interface PlanInput {
   surface: "web" | "telegram";
   /** Rolling summary of older messages (trusted recap), or null/absent. */
   summary?: string | null;
+  /**
+   * When true, `newUserMessage` is a synthetic prompt the system generated (e.g.
+   * a job-completion nudge), NOT a real human turn. It is persisted as a
+   * trusted `system` message and rendered as a system instruction in the
+   * transcript — so it never pollutes history/compaction as if the user spoke,
+   * and the planner never reads it as user approval.
+   */
+  internal?: boolean;
 }
 
 /**
@@ -248,10 +256,12 @@ export async function runDirectorTurn(
 ): Promise<{ message: Message; response: DirectorResponse }> {
   const { site } = await getConversationWithSite(input.conversation.id);
 
-  // 1. Persist the user's message
+  // 1. Persist the incoming message. A synthetic/internal prompt (job-completion
+  // nudge) is stored as a `system` message — NOT `user` — so it never reads as a
+  // real human turn in history, rendering, or chat-compaction.
   await appendMessage({
     conversationId: input.conversation.id,
-    role: "user",
+    role: input.internal ? "system" : "user",
     content: input.newUserMessage,
     surface: input.surface,
   });
@@ -271,7 +281,14 @@ export async function runDirectorTurn(
     const content = m.role === "system" ? fenceUntrusted(m.content) : m.content;
     transcriptLines.push(`[${m.role}] ${content}`);
   }
-  transcriptLines.push(`[user] ${input.newUserMessage}`);
+  // A synthetic/internal prompt is a trusted instruction we authored (a
+  // job-completion nudge), so emit it as a [system] line — never [user], which
+  // would read as human approval to the planner.
+  transcriptLines.push(
+    input.internal
+      ? `[system] ${input.newUserMessage}`
+      : `[user] ${input.newUserMessage}`,
+  );
   if (input.conversation.planApproved) {
     transcriptLines.push(
       `[system] Plan has been approved by the user; run-and-report mode active.`,
@@ -500,6 +517,8 @@ export async function runDirectorReport(
     newUserMessage:
       "Job completed — summarize what came back and propose the next step.",
     surface: "web",
+    // Synthetic nudge — persist as a `system` message, never a fake user turn.
+    internal: true,
   });
   return message;
 }

@@ -14,7 +14,15 @@ import { startRun, finishRun } from "@/lib/services/runs";
  * DB is down); the stream itself always works.
  *
  * Event types: `phase`, `tick`, `result`, `error`, `done`.
+ *
+ * The stream is bounded: it ends when the client disconnects (`req.signal`
+ * aborts), when the per-request time cap (`MAX_STREAM_MS`) elapses, or when the
+ * run settles — whichever comes first. `controller.close()` is guarded by a
+ * `closed` flag so it is invoked exactly once even across these paths.
  */
+const MAX_STREAM_MS = 5 * 60_000; // hard cap so a stuck run can't stream forever
+const TICK_MS = 400;
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string }> }) {
   const { key } = await ctx.params;
   const siteIdRaw = Number(new URL(req.url).searchParams.get("siteId") ?? "");
@@ -23,21 +31,40 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: string, data: unknown) =>
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      // Guard so close() runs exactly once (calling it twice throws) and so a
+      // post-abort enqueue() can't crash the handler.
+      let closed = false;
+      const closeOnce = () => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          /* already closed/errored by the runtime on client abort */
+        }
+      };
+      const send = (event: string, data: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // Controller closed underneath us (client gone) — stop emitting.
+          closed = true;
+        }
+      };
       const t0 = Date.now();
       const elapsed = () => Date.now() - t0;
+      // True once the client disconnects; checked in the tick loop and early exits.
+      const aborted = () => req.signal.aborted || closed;
 
       try {
         const agent = findAgent(key);
         if (!agent) {
           send("failed", { message: `Unknown agent: ${key}` });
-          controller.close();
           return;
         }
         if (!agent.implemented) {
           send("failed", { message: `${agent.name} is not implemented yet.` });
-          controller.close();
           return;
         }
 
@@ -47,7 +74,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string
         if (!hasInlineRunner(key)) {
           send("phase", { phase: "queued", label: `${agent.name} runs on the worker — queued for the next poll.`, elapsedMs: elapsed() });
           send("done", { ok: true, queued: true, elapsedMs: elapsed() });
-          controller.close();
           return;
         }
 
@@ -78,9 +104,23 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string
         let settled = false;
         runPromise.finally(() => { settled = true; }).catch(() => {});
 
-        while (!settled) {
-          await new Promise((res) => setTimeout(res, 400));
+        // Tick until the run settles, the client disconnects, or the time cap is
+        // hit — never an unbounded loop. The cap also stops ticking if a runner
+        // hangs forever (its result promise is then orphaned, not awaited).
+        while (!settled && !aborted() && elapsed() < MAX_STREAM_MS) {
+          await new Promise((res) => setTimeout(res, TICK_MS));
           send("tick", { elapsedMs: elapsed() });
+        }
+
+        // Client gone: stop without emitting more; finally closes once.
+        if (aborted()) return;
+
+        // Time cap reached while the run is still going: surface it and bail
+        // rather than awaiting a promise that may never resolve.
+        if (!settled) {
+          send("failed", { message: `Stream timed out after ${MAX_STREAM_MS}ms`, elapsedMs: elapsed() });
+          if (runId) await finishRun({ runId, status: "failure", error: "stream_timeout" }).catch(() => {});
+          return;
         }
 
         try {
@@ -98,7 +138,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string
       } catch (e) {
         send("failed", { message: e instanceof Error ? e.message : String(e) });
       } finally {
-        controller.close();
+        closeOnce();
       }
     },
   });
