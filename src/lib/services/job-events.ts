@@ -6,7 +6,7 @@
  * job); reads are defensive (a missing table degrades to an empty timeline).
  */
 
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, lt } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobEvents, type JobEvent } from "@/lib/db/schema";
 
@@ -38,5 +38,22 @@ export async function listJobEvents(jobId: number): Promise<JobEvent[]> {
   } catch (e) {
     console.warn("listJobEvents failed (table may not exist yet)", e);
     return [];
+  }
+}
+
+/**
+ * N-15: retention sweep. job_events is append-only and orphaned by the F-027
+ * jobs purge, so it grows unbounded. Delete events older than `beforeDate`
+ * (the digest cron passes a 30-day cutoff, env-tunable). Best-effort — a
+ * missing table or DB error returns 0 rather than failing the cron.
+ */
+export async function purgeOldJobEvents(beforeDate: Date): Promise<number> {
+  try {
+    const db = getDb();
+    const result = await db.delete(jobEvents).where(lt(jobEvents.at, beforeDate));
+    return (result as unknown as { rowCount?: number }).rowCount ?? 0;
+  } catch (e) {
+    console.warn("purgeOldJobEvents failed (table may not exist yet)", e);
+    return 0;
   }
 }

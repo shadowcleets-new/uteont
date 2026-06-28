@@ -2,6 +2,19 @@
 
 **A holistic audit of every known gap, bug, and risk in the codebase + deployment.**
 
+> ### Reconciliation — 2026-06-22 (operator-authorized, DOC-1)
+> Statuses were reconciled against the actual code: ~24 finding **bodies** still
+> read `OPEN`/`ACK` while the **index** already recorded them `FIXED` (the drift
+> DOC-1 flagged). Bodies now match the index, using the code + commit history as
+> ground truth. This session also completed and marked: **F-020** (remaining
+> swallow-catches, `d077b97`), **F-024** (worker monitoring, `a7003ae`),
+> **F-025** (server-side backoff, `8f2b761`), **F-032** + **F-033** (pre-commit
+> hook + CONTRIBUTING, `6466c8b`). Still genuinely open/owed: **F-026** (restore
+> drill — operator), and the SEC-1 admin-password rotation tracked under F-031.
+>
+> The newer `N-xx` / `SEC-x` findings from this audit are tracked in
+> **`REMEDIATION_PLAN.md`** (the forward plan), not duplicated here.
+
 ## Update policy
 
 > This document is **append-only and human-controlled**. Claude must not
@@ -68,8 +81,8 @@ Findings are grouped by domain, then sorted by severity descending.
 | F-029 | NextAuth Google provider has no `hd` (hosted-domain) hint | Security | 🟢 | FIXED (`604e7d0`) — `GOOGLE_HOSTED_DOMAIN` env (optional) |
 | F-030 | Build emits many `LF will be replaced by CRLF` warnings on Windows | Code Quality | 🔵 | FIXED (`604e7d0`) — `.gitattributes` |
 | F-031 | **Live secrets pasted verbatim into committed GAPS_REPORT.md** | Security | 🔴 | FIXED (`9598ca0` history + CI guard; rotation completed via F-006/F-007/F-008) |
-| F-032 | gitleaks runs at CI only, not pre-commit (bypass via `git push --no-verify` possible) | Security | 🟡 | OPEN |
-| F-033 | Operator-facing "document containing secrets must be redacted before commit" checklist not formalized | Process | 🟡 | ACK (committed verbally in incident response; no enforcement) |
+| F-032 | gitleaks runs at CI only, not pre-commit (bypass via `git push --no-verify` possible) | Security | 🟡 | FIXED (`6466c8b`) — `.husky/pre-commit` gitleaks scan (warn-skips when binary absent) |
+| F-033 | Operator-facing "document containing secrets must be redacted before commit" checklist not formalized | Process | 🟡 | FIXED (`6466c8b`) — `CONTRIBUTING.md` redaction checklist |
 | F-034 | **Silent migration drift — `db:migrate` reported success but migrations 0001 + 0002 never applied** | Operations | 🔴 | FIXED (`31bfead`) — `/api/db-status` endpoint surfaces schema mismatch; future drift detectable in one curl |
 | F-035 | `getAuthConfig` swallowed schema errors as "no row" — produced misleading `/whoami` "not yet set" reply when table didn't exist | Code Quality | 🟠 | FIXED (`31bfead`) — three-state return distinguishes missing-table (`undefined`) from no-row (`null`); 42P01 logged as SCHEMA MISSING |
 | F-036 | `/setuser` success message suggested `/setpassword` (chat-history-leaky) instead of `/setpassword-url` | Privacy | 🟢 | FIXED (`31bfead`) |
@@ -167,7 +180,7 @@ Findings are grouped by domain, then sorted by severity descending.
 
 ### F-006 — Telegram bot token visible in this conversation history
 
-**Domain:** Security · **Severity:** 🟠 High · **Status:** ACK
+**Domain:** Security · **Severity:** 🟠 High · **Status:** FIXED — operator rotated 2026-05-27 via `/revoke`; new token live, old returns 401
 
 **Description.** During development the bot token was pasted in chat (twice — original and after `/revoke`). The current token, `<TELEGRAM_BOT_TOKEN_REDACTED>`, is in the chat history. Anyone with read access to this transcript can take over the bot.
 
@@ -192,7 +205,7 @@ Findings are grouped by domain, then sorted by severity descending.
 
 ### F-007 — `WORKER_SHARED_SECRET` visible in conversation history
 
-**Domain:** Security · **Severity:** 🟠 High · **Status:** ACK
+**Domain:** Security · **Severity:** 🟠 High · **Status:** FIXED — operator rotated 2026-05-27 in Vercel + Railway; worker confirmed claiming jobs
 
 **Description.** Two `WORKER_SHARED_SECRET` values have appeared in this chat: `<WORKER_SECRET_REDACTED>` (rotated out) and `<WORKER_SECRET_REDACTED>` (currently live). Anyone with the current value can call `/api/jobs/claim` and impersonate the worker.
 
@@ -211,7 +224,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-008 — `GEMINI_API_KEY` visible in conversation history
 
-**Domain:** Security · **Severity:** 🟡 Medium · **Status:** ACK
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** FIXED — old key auto-revoked by Google Secret Scanning; new key live in Railway
 
 **Description.** The Gemini API key `<GEMINI_API_KEY_REDACTED>` is in chat (was pasted as part of a cURL test). Anyone with it can burn the operator's free-tier quota or rack up paid usage if quota is raised.
 
@@ -225,7 +238,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-009 — No rate limiting on `/api/auth/*` (credential brute force)
 
-**Domain:** Security · **Severity:** 🟠 High · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟠 High · **Status:** FIXED (`604e7d0`)
 
 **Description.** The username/password login endpoint has no rate limit. An attacker can hit `/api/auth/callback/credentials` thousands of times per second and brute-force the password.
 
@@ -244,7 +257,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-010 — No login attempt logging or alerts
 
-**Domain:** Security · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** FIXED (`604e7d0`)
 
 **Description.** Failed (and successful) login attempts go nowhere — no DB row, no Telegram alert, nothing in Vercel logs at the application level.
 
@@ -259,7 +272,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-011 — Password policy is length-only
 
-**Domain:** Security · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`)
 
 **Description.** `setPassword()` requires only `password.length >= 8`. A password like `aaaaaaaa` would be accepted.
 
@@ -274,7 +287,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-012 — Telegram admin gate trusts single env var
 
-**Domain:** Security · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** FIXED (`604e7d0`) — verified in code
 
 **Description.** Admin commands (`/setuser`, `/setpassword`, etc.) check `chatId === process.env.TELEGRAM_CHAT_ID`. If an attacker compromises Vercel env (e.g., via a leaked Vercel token), they can set `TELEGRAM_CHAT_ID` to their own chat ID and then run admin commands at will.
 
@@ -286,7 +299,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-013 — bcryptjs cost factor 10
 
-**Domain:** Security · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`)
 
 **Description.** Password hashing uses bcryptjs at default cost 10 (~100ms on modern CPUs). OWASP currently recommends 12+ for bcrypt as of 2025.
 
@@ -298,7 +311,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-014 — No Content-Security-Policy headers
 
-**Domain:** Security · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** FIXED (`604e7d0`)
 
 **Description.** No CSP header set in `next.config.ts` or `vercel.json`. A reflected-XSS bug anywhere on the app could be exploited freely.
 
@@ -310,7 +323,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-015 — HSTS not declared in next.config
 
-**Domain:** Security · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`)
 
 **Description.** Vercel automatically sets `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` (verified via curl). However, the app itself doesn't declare HSTS in code, so a future hosting change could drop it silently.
 
@@ -320,7 +333,7 @@ Cannot directly access the DB, cannot read other secrets, cannot exfil credentia
 
 ### F-016 — `/setpassword <pw>` sends password plaintext over Telegram
 
-**Domain:** Privacy · **Severity:** 🟠 High · **Status:** ACK
+**Domain:** Privacy · **Severity:** 🟠 High · **Status:** FIXED (`604e7d0`) — `/setpassword-url` flow replaces plaintext-over-chat
 
 **Description.** Sending `/setpassword Why@p@$$w0rdin%20260!` in Telegram means the password is plaintext in:
 - The operator's Telegram chat history
@@ -345,7 +358,7 @@ Recommendation: implement #2 in a future iteration.
 
 ### F-017 — `AUTH_SECRET` set only in production env
 
-**Domain:** Security · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** ACK — dev/preview missing AUTH_SECRET is accepted residual (team sensitive-vars policy); set in production. Documented in OPERATIONS.md.
 
 **Description.** `AUTH_SECRET` was added to Vercel production only (the CLI rejected `preview` and `development` due to team's Sensitive Environment Variables Policy).
 
@@ -359,7 +372,7 @@ Recommendation: implement #2 in a future iteration.
 
 ### F-018 — `/api/health` reveals env-var existence
 
-**Domain:** Privacy · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Privacy · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`) — split public-minimal vs authed-full
 
 **Description.** `/api/health` is intentionally public (so monitoring works) and returns:
 ```json
@@ -379,7 +392,7 @@ It reveals booleans for whether each env var is set. An attacker can map the sta
 
 ### F-019 — Login page `<title>` reveals product name
 
-**Domain:** Privacy · **Severity:** 🔵 Info · **Status:** ACK
+**Domain:** Privacy · **Severity:** 🔵 Info · **Status:** FIXED (`604e7d0`)
 
 **Description.** `<title>Sign in — UTEONT</title>` on `/login` reveals the product name to scanners, search engines, and tab thumbnails.
 
@@ -391,7 +404,7 @@ It reveals booleans for whether each env var is set. An attacker can map the sta
 
 ### F-020 — Several `try/catch { return null }` blocks swallow errors
 
-**Domain:** Code Quality · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Code Quality · **Severity:** 🟡 Medium · **Status:** FIXED (`604e7d0`); remaining swallow-catches completed via N-11 (`d077b97`)
 
 **Description.** Functions like `getAgentStats()`, `getAllAgentStats()`, `getAuthConfig()`, and `listRuns(...)` wrap DB queries in `try { ... } catch { return [] /* or null */ }` — masking errors so the UI degrades gracefully.
 
@@ -405,7 +418,7 @@ It reveals booleans for whether each env var is set. An attacker can map the sta
 
 ### F-021 — No automated tests anywhere
 
-**Domain:** Code Quality · **Severity:** 🟠 High · **Status:** OPEN
+**Domain:** Code Quality · **Severity:** 🟠 High · **Status:** FIXED (`e6849ae`) — Vitest scaffolded; suite now 394 passing
 
 **Description.** The repo has zero test files. No unit tests for the deterministic agents (qa-agent, seo-agent), no integration tests for API routes, no E2E test for the login flow.
 
@@ -422,7 +435,7 @@ Realistic next step: cover the auth flow first since it gates everything.
 
 ### F-022 — Inline arbitrary Tailwind values scattered
 
-**Domain:** Code Quality · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Code Quality · **Severity:** 🟢 Low · **Status:** FIXED (`e6849ae`) — brand-* tokens in @theme
 
 **Description.** Brand colors like `#d97757` and `#141413` appear inline in dozens of `bg-[#xxx]` / `text-[#xxx]` / `border-[#xxx]` arbitrary values. Tokens exist in `src/lib/theme.ts` but aren't wired into Tailwind config.
 
@@ -438,7 +451,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-023 — Hardcoded fallback `NEXT_PUBLIC_APP_URL`
 
-**Domain:** Code Quality · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Code Quality · **Severity:** 🟢 Low · **Status:** ACK — hardcoded `NEXT_PUBLIC_APP_URL` fallback documented in code; full removal would break local dev.
 
 **Description.** Telegram webhook handler uses `process.env.NEXT_PUBLIC_APP_URL ?? "https://uteont.vercel.app"`. If you ever move to a custom domain, every deep link in bot messages still points at the vercel.app subdomain unless the env var is explicitly set.
 
@@ -448,7 +461,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-024 — Worker has no `/health` endpoint
 
-**Domain:** Operations · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Operations · **Severity:** 🟡 Medium · **Status:** FIXED — `/health` endpoint (`604e7d0`) + stale-worker monitoring cron (`a7003ae`)
 
 **Description.** The Python worker polls and acts but exposes no HTTP endpoint. If it crashes or hangs (e.g., Gemini timeout, network split), Railway shows it as Active until the next deployment cycle. The operator only finds out when a queued job goes stale.
 
@@ -461,7 +474,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-025 — Fixed-attempt retry, no backoff
 
-**Domain:** Operations · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Operations · **Severity:** 🟢 Low · **Status:** FIXED — in-worker backoff (`604e7d0`) + server-side `scheduled_at` gate (`8f2b761`, migration 0011)
 
 **Description.** Jobs retry up to `maxAttempts` (default 3) on the next poll cycle (~5 seconds later). No exponential backoff. A genuinely flaky downstream (e.g., Gemini overloaded) gets hammered.
 
@@ -471,7 +484,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-026 — No backup-restore drill for Neon
 
-**Domain:** Operations · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Operations · **Severity:** 🟡 Medium · **Status:** DOCUMENTED (`e6849ae`) — procedure + RTO/RPO in OPERATIONS.md; first restore drill still owed (operator).
 
 **Description.** Neon offers Point-in-Time Recovery by default (free tier: 24 hours; paid: 7 days). I've never actually executed a restore to confirm it works for this DB.
 
@@ -486,7 +499,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-027 — `result` JSON accumulates indefinitely in `jobs`
 
-**Domain:** Operations · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Operations · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`) — weekly cron purges done jobs > 30d
 
 **Description.** Every completed job stores its full result payload (including full keyword arrays, idea lists, article bodies) in `jobs.result` as JSONB. Nothing purges old rows.
 
@@ -498,7 +511,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-028 — Failed Telegram notification has no retry
 
-**Domain:** Operations · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Operations · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`) — 3 attempts w/ backoff, skips 4xx
 
 **Description.** If `sendMessage()` fails (Telegram outage, transient error), the notification is marked failed and never retried. The operator misses the alert.
 
@@ -508,7 +521,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-029 — NextAuth Google provider has no `hd` hint
 
-**Domain:** Security · **Severity:** 🟢 Low · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟢 Low · **Status:** FIXED (`604e7d0`) — optional `GOOGLE_HOSTED_DOMAIN` hint
 
 **Description.** When Google OAuth is configured, the consent screen accepts ANY Google account. The allowlist check happens after sign-in (signIn callback). Bad UX: a wrong-account user gets through Google's flow then sees "access denied".
 
@@ -532,7 +545,7 @@ Then `bg-[#d97757]` becomes `bg-brand-accent`. Refactor incrementally.
 
 ### F-031 — Live secrets pasted verbatim into committed GAPS_REPORT.md
 
-**Domain:** Security · **Severity:** 🔴 Critical · **Status:** FIXED (`9598ca0`) for history + CI; **ROTATION PENDING OPERATOR**
+**Domain:** Security · **Severity:** 🔴 Critical · **Status:** FIXED (`9598ca0`) for history + CI guard; secret rotations completed (F-006/7/8). New admin-password rotation (SEC-1) tracked in REMEDIATION_PLAN.md.
 
 **Description.** While documenting F-006, F-007, F-008 (secrets exposed in this conversation transcript), the LLM included the actual literal secret values in the committed audit report instead of redacted forms. The report was pushed to the public GitHub repo. GitHub Secret Scanning detected the Google API key and the Telegram bot token within minutes and emailed the operator.
 
@@ -571,7 +584,7 @@ Specifically leaked via commits `559a046`, `604e7d0`, and `3c919bc` (now rewritt
 
 ### F-032 — gitleaks runs at CI only, not pre-commit
 
-**Domain:** Security · **Severity:** 🟡 Medium · **Status:** OPEN
+**Domain:** Security · **Severity:** 🟡 Medium · **Status:** FIXED (`6466c8b`) — gitleaks pre-commit hook (warn-skips when binary absent so it never blocks a clone)
 
 **Description.** The gitleaks safety net added in F-031 runs on `git push` (when GitHub Actions fire). It does not run on `git commit`, so a developer can locally make a contaminated commit and not realize until the push fails. Worse: `git push --no-verify` bypasses it entirely if the bypass is at the GitHub Actions level (it isn't — Actions can't be skipped via `--no-verify` — but the principle stands for any future pre-commit hook).
 
@@ -583,7 +596,7 @@ Specifically leaked via commits `559a046`, `604e7d0`, and `3c919bc` (now rewritt
 
 ### F-033 — Operator-facing "secrets must be redacted before commit" checklist not formalized
 
-**Domain:** Process · **Severity:** 🟡 Medium · **Status:** ACK
+**Domain:** Process · **Severity:** 🟡 Medium · **Status:** FIXED (`6466c8b`) — `CONTRIBUTING.md` redaction checklist added
 
 **Description.** The lesson from F-031 lives in this report and the incident-response Telegram messages but is not encoded as a process control. There's no PR template, no CONTRIBUTING.md section, no auto-attached comment from a bot.
 

@@ -8,6 +8,8 @@
  * without them every network call no-ops.
  */
 
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const SCOPE =
@@ -143,6 +145,70 @@ export function parsePageRows(apiJson: unknown): GscPageRow[] {
       ctr: r.ctr ?? 0,
       position: r.position ?? 0,
     }));
+}
+
+// --- signed OAuth state (CSRF protection, N-17) ---------------------------
+
+/** Cookie name the callback reads to bind state back to the browser that started the flow. */
+export const GSC_OAUTH_STATE_COOKIE = "gsc_oauth_state";
+
+/** Secret used to sign the OAuth state. Reuses the app's existing server secret. */
+function stateSecret(): string {
+  return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "";
+}
+
+function signState(payloadB64: string, secret: string): string {
+  return createHmac("sha256", secret).update(payloadB64).digest("base64url");
+}
+
+/**
+ * Build a signed OAuth `state` that binds the flow to a server secret + a random
+ * nonce. Returns the `state` string to hand to Google and the `nonce` to store
+ * in an httpOnly cookie; the callback rejects any state whose nonce doesn't
+ * match the cookie (so a forged/foreign state can't be replayed). Returns null
+ * if no server secret is configured.
+ */
+export function buildSignedState(siteId: number): { state: string; nonce: string } | null {
+  const secret = stateSecret();
+  if (!secret) return null;
+  const nonce = randomBytes(16).toString("base64url");
+  const payloadB64 = Buffer.from(JSON.stringify({ siteId, nonce })).toString("base64url");
+  const sig = signState(payloadB64, secret);
+  return { state: `${payloadB64}.${sig}`, nonce };
+}
+
+/**
+ * Verify a signed OAuth `state` against the server secret and the nonce stored
+ * in the request cookie. Returns the bound `siteId` only when the HMAC is valid
+ * (constant-time compare) AND the embedded nonce matches `cookieNonce`. Any
+ * tampered, foreign, or unbound state yields null.
+ */
+export function verifySignedState(state: string | null, cookieNonce: string | null): number | null {
+  const secret = stateSecret();
+  if (!secret || !state || !cookieNonce) return null;
+  const dot = state.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const payloadB64 = state.slice(0, dot);
+  const sig = state.slice(dot + 1);
+
+  const expected = signState(payloadB64, secret);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  let parsed: { siteId?: unknown; nonce?: unknown };
+  try {
+    parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (typeof parsed.nonce !== "string") return null;
+  const n = Buffer.from(parsed.nonce);
+  const c = Buffer.from(cookieNonce);
+  if (n.length !== c.length || !timingSafeEqual(n, c)) return null;
+
+  const siteId = Number(parsed.siteId);
+  return Number.isFinite(siteId) && siteId > 0 ? siteId : null;
 }
 
 /** OAuth consent URL (offline + forced consent to guarantee a refresh token), or null if unconfigured. */

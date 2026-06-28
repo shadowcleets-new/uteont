@@ -89,4 +89,27 @@ describe("redactPII", () => {
     );
   });
   // #endregion
+
+  // #region Fail-closed on internal error (N-23)
+  it("fails CLOSED (never leaks raw input) when the redaction engine throws", () => {
+    const raw = "leak me jane@example.com and +1 415-555-2671";
+    const realReplace = String.prototype.replace;
+    // Force the internal redaction path to throw on the first .replace() call.
+    String.prototype.replace = function (): never {
+      throw new Error("forced internal failure");
+    };
+
+    try {
+      const out = redactPII(raw);
+      // Must NOT return the raw, unredacted text (fail open). Empty-safe value
+      // is acceptable; presence of any PII fragment is not.
+      expect(out).not.toBe(raw);
+      expect(out).toBe("");
+      expect(out).not.toContain("jane@example.com");
+      expect(out).not.toContain("415-555-2671");
+    } finally {
+      String.prototype.replace = realReplace;
+    }
+  });
+  // #endregion
 });

@@ -76,3 +76,20 @@ export function detectCannibalization(
   return out;
 }
 // #endregion
+
+// #region Idempotency
+/**
+ * N-14 — drop findings whose query already has a cannibalization decision
+ * recorded for the same site+day, so a re-fired daily cron writes no duplicate
+ * rows. Pure and deterministic: `alreadyRecordedQueries` is the set of query
+ * strings already persisted today; any finding whose query is in it is skipped.
+ */
+export function dedupeFindingsAgainstRecorded(
+  findings: Cannibalization[],
+  alreadyRecordedQueries: Iterable<string>,
+): Cannibalization[] {
+  if (!Array.isArray(findings) || findings.length === 0) return [];
+  const seen = new Set<string>(alreadyRecordedQueries);
+  return findings.filter((f) => !seen.has(f.query));
+}
+// #endregion

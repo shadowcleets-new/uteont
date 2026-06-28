@@ -10,9 +10,47 @@
 
 import { logEvent } from "@/lib/observability/logger";
 import { estimateCostUsd } from "./gemini-cost";
+import { checkBudgetCap } from "./cost-ledger";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-flash-latest";
+
+// #region Daily budget cap (N-06)
+/**
+ * Per-process daily spend accumulator, keyed by UTC day ("YYYY-MM-DD"). The
+ * cap itself comes from GEMINI_DAILY_BUDGET_USD; when that env var is unset (or
+ * not a positive finite number) the cap resolves to null and checkBudgetCap
+ * treats spend as unlimited, so default behavior is unchanged.
+ */
+const dailySpendUsd = new Map<string, number>();
+
+function utcDay(now = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+/** Parse GEMINI_DAILY_BUDGET_USD; unset/invalid/non-positive => null (unlimited). */
+function dailyBudgetCapUsd(): number | null {
+  const raw = process.env.GEMINI_DAILY_BUDGET_USD;
+  if (raw == null || raw.trim() === "") return null;
+  const cap = Number(raw);
+  return Number.isFinite(cap) && cap > 0 ? cap : null;
+}
+
+function spentTodayUsd(): number {
+  return dailySpendUsd.get(utcDay()) ?? 0;
+}
+
+function recordSpendUsd(costUsd: number): void {
+  if (!Number.isFinite(costUsd) || costUsd <= 0) return;
+  const day = utcDay();
+  dailySpendUsd.set(day, (dailySpendUsd.get(day) ?? 0) + costUsd);
+}
+
+/** Test-only: clear the per-process spend accumulator so cases start at $0. */
+export function __resetDailySpendForTests(): void {
+  dailySpendUsd.clear();
+}
+// #endregion
 
 export class GeminiError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
@@ -89,6 +127,15 @@ export async function complete(
   const apiKey = getApiKey();
   const model = opts.model ?? DEFAULT_MODEL;
 
+  // Budget cap (N-06): refuse the call before spending the network round-trip
+  // once today's accumulated spend hits the configured daily cap. Unset env =>
+  // null cap => never exceeded, so default behavior is unchanged.
+  if (checkBudgetCap(spentTodayUsd(), dailyBudgetCapUsd()).exceeded) {
+    throw new GeminiError(
+      `Gemini daily budget cap of $${dailyBudgetCapUsd()} USD exceeded (spent $${spentTodayUsd()} today). Set GEMINI_DAILY_BUDGET_USD higher or unset it to disable the cap.`,
+    );
+  }
+
   const body: Record<string, unknown> = {
     contents: [{ parts: [{ text: prompt }] }],
   };
@@ -162,6 +209,18 @@ export async function complete(
       }
     : undefined;
 
+  const costUsd = usage
+    ? estimateCostUsd(model, {
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        cachedTokens: usage.cachedTokens,
+      })
+    : undefined;
+
+  // Feed the budget cap: accumulate this call's estimated spend so subsequent
+  // calls today are checked against the running total (N-06).
+  if (costUsd !== undefined) recordSpendUsd(costUsd);
+
   logEvent({
     kind: "model.call",
     model,
@@ -174,13 +233,7 @@ export async function complete(
     totalTokens: usage?.totalTokens,
     cachedTokens: usage?.cachedTokens,
     cached: Boolean(opts.cachedContent),
-    costUsd: usage
-      ? estimateCostUsd(model, {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          cachedTokens: usage.cachedTokens,
-        })
-      : undefined,
+    costUsd,
   });
 
   return {

@@ -227,21 +227,26 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
     .returning();
 
   // 2. Agent-specific persistence (each wrapped — a typed-table issue must not
-  //    roll back the runs row).
-  try {
-    if (input.agentKey === "research") {
-      await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
-    } else if (input.agentKey === "idea-generation") {
-      await persistIdeas(input.cycleId, input.result);
-    } else if (input.agentKey === "content-writing") {
-      await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
-    } else if (input.agentKey === "tactics-scraper") {
-      const { tacticsFromResult, persistTactics } = await import("./tactics");
-      await persistTactics(input.siteId, tacticsFromResult(input.result), "agent");
+  //    roll back the runs row). Real jobs only: a cached replay (jobId == null)
+  //    must NOT re-insert articles/ideas/keywords the original job already
+  //    persisted — on a replay the telemetry runs row above is the only storage
+  //    effect. (N-03; mirrors the checkpoint guard below.)
+  if (input.jobId != null) {
+    try {
+      if (input.agentKey === "research") {
+        await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
+      } else if (input.agentKey === "idea-generation") {
+        await persistIdeas(input.cycleId, input.result);
+      } else if (input.agentKey === "content-writing") {
+        await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
+      } else if (input.agentKey === "tactics-scraper") {
+        const { tacticsFromResult, persistTactics } = await import("./tactics");
+        await persistTactics(input.siteId, tacticsFromResult(input.result), "agent");
+      }
+      // outreach/backlink: result captured in runs.result; no typed table v1.
+    } catch (e) {
+      console.warn(`applyJobResult: agent-persist failed for ${input.agentKey}`, e);
     }
-    // outreach/backlink: result captured in runs.result; no typed table v1.
-  } catch (e) {
-    console.warn(`applyJobResult: agent-persist failed for ${input.agentKey}`, e);
   }
 
   // 2.5 Enqueue an approval checkpoint for gated outputs so finished work that
@@ -346,6 +351,7 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
       SELECT id FROM jobs
       WHERE status = 'queued'
         AND agent_key IN (${sql.join(agentKeys.map((k) => sql`${k}`), sql`, `)})
+        AND (scheduled_at IS NULL OR scheduled_at <= NOW())
       ORDER BY priority DESC, id ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -383,12 +389,12 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
 export async function completeJob(jobId: number, result: Record<string, unknown>) {
   const db = getDb();
 
-  // A-04: idempotent completion. Gate the transition on the job still being
-  // 'claimed' and only apply side-effects when THIS call actually flipped it to
-  // 'done'. A duplicate/late worker report (e.g. the complete HTTP call timed
-  // out after the server committed, so the worker retried) returns no row here
-  // and becomes a safe no-op — no second runs row, no re-persisted entities,
-  // no double notification.
+  // A-04 / N-01: idempotent completion. Gate the transition on the job still
+  // being 'claimed' and only apply side-effects when THIS call actually flipped
+  // it to 'done'. A duplicate/late worker report (e.g. the complete HTTP call
+  // timed out after the server committed, so the worker retried) returns no row
+  // here and becomes a safe no-op — no second runs row, no re-persisted
+  // entities, no double notification.
   const [job] = await db
     .update(jobs)
     .set({ status: "done", finishedAt: new Date(), result })
@@ -551,6 +557,18 @@ async function persistArticle(
   });
 }
 
+/**
+ * Server-authoritative retry backoff (F-025). Mirrors the worker's curve
+ * (attempts=N → 2^N * 5s, capped at 5 min) but is enforced via the jobs.
+ * scheduled_at column + the claim query's `scheduled_at <= NOW()` gate, so the
+ * delay holds across worker restarts and any worker count — not just the
+ * in-process sleep of the worker that happened to fail.
+ */
+function retryBackoffMs(attempts: number): number {
+  const seconds = Math.min(300, 5 * 2 ** Math.max(0, attempts));
+  return seconds * 1000;
+}
+
 export async function failJob(jobId: number, error: string, retry: boolean) {
   const db = getDb();
   const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
@@ -558,19 +576,20 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
   if (row.status === "done") return; // fast path; the guarded UPDATE below is the real gate
   const shouldRetry = retry && row.attempts < row.maxAttempts;
 
-  // A-04: the transition is ATOMICALLY guarded on the job NOT already being
-  // 'done'. A read-then-write check would race a concurrent completeJob (the
-  // worker's complete HTTP call can commit server-side while its response times
-  // out, so it then calls failJob) — both could read 'claimed' and the fail
-  // would overwrite the committed 'done', stranding/duplicating the result.
-  // `WHERE status != 'done' RETURNING` lets exactly one of them win; if no row
-  // comes back, completion already happened and this fail is a no-op.
+  // F-025: when requeuing for retry, stamp scheduled_at = now + backoff so the
+  // job is not claimable until the backoff elapses (claim query gates on it).
+  const scheduledAt = shouldRetry ? new Date(Date.now() + retryBackoffMs(row.attempts)) : null;
+  // A-04 / N-01: the transition is ATOMICALLY guarded on the job NOT already
+  // being 'done'. A read-then-write check would race a concurrent completeJob;
+  // `WHERE status != 'done' RETURNING` lets exactly one of them win — if no row
+  // comes back, completion already happened and this fail is a safe no-op.
   const [updated] = await db
     .update(jobs)
     .set({
       status: shouldRetry ? "queued" : "failed",
       claimedBy: null,
       claimedAt: null,
+      scheduledAt, // F-025: now+backoff on retry; null otherwise
       finishedAt: shouldRetry ? null : new Date(),
       error,
     })

@@ -3,6 +3,7 @@ import { lt, eq, and } from "drizzle-orm";
 import { sendMessage } from "@/lib/services/telegram";
 import { listRuns } from "@/lib/services/runs";
 import { purgeOldAttempts } from "@/lib/services/login-attempts";
+import { purgeOldJobEvents } from "@/lib/services/job-events";
 import { getDb } from "@/lib/db/client";
 import { jobs } from "@/lib/db/schema";
 
@@ -52,9 +53,21 @@ export async function GET() {
   // 3. F-010: purge login attempts older than 30 days.
   const purgedAttempts = await purgeOldAttempts();
 
+  // 4. N-15: purge job_events older than the retention window (default 30 days,
+  //    env-tunable via JOB_EVENTS_RETENTION_DAYS). The F-027 jobs purge orphans
+  //    these append-only rows, so they grow unbounded without their own sweep.
+  let purgedJobEvents = 0;
+  try {
+    const retentionDays = Number(process.env.JOB_EVENTS_RETENTION_DAYS) || 30;
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
+    purgedJobEvents = await purgeOldJobEvents(cutoff);
+  } catch (e) {
+    console.warn("[cron.digest] purge job events failed:", e);
+  }
+
   summary +=
-    purgedJobs || purgedAttempts
-      ? `\n\nMaintenance: purged ${purgedJobs} old jobs, ${purgedAttempts} login attempts.`
+    purgedJobs || purgedAttempts || purgedJobEvents
+      ? `\n\nMaintenance: purged ${purgedJobs} old jobs, ${purgedAttempts} login attempts, ${purgedJobEvents} job events.`
       : "";
 
   const sent = await sendMessage({ text: summary });
@@ -62,6 +75,6 @@ export async function GET() {
     ok: true,
     telegramSent: sent,
     digest: summary,
-    maintenance: { purgedJobs, purgedAttempts },
+    maintenance: { purgedJobs, purgedAttempts, purgedJobEvents },
   });
 }

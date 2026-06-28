@@ -160,8 +160,10 @@ Today's monitoring is minimal:
 # Pull latest secrets (writes .env.local)
 vercel env pull .env.local
 
-# Apply latest migrations
-npm run db:migrate
+# Sync the DB schema. Use db:push for an EXISTING database (it diffs the live
+# schema and applies only what's missing — safe, idempotent). Use db:migrate
+# only when provisioning a brand-new/empty database.
+npm run db:push
 
 # Start dev server
 npm run dev
@@ -200,6 +202,178 @@ Coverage today is intentionally minimal (password policy only). Add tests when y
 | Tail Vercel logs | `vercel logs --follow` |
 | Pull production env | `vercel env pull .env.local --environment=production` |
 
+## Operator Runbook — releasing branch `claude/thirsty-satoshi-0601ab` (2026-06-22)
+
+Beginner-friendly, click-by-click. Do the four steps **in order** (Step 1 before
+Step 2 — explained in Step 2). If anything on screen doesn't match what's written
+here, stop and ask before clicking.
+
+### Opening PowerShell (you'll need it for Steps 1 and 3)
+
+1. Press the **Windows key** on your keyboard (or click the Start button).
+2. Type the word **`powershell`**.
+3. Click **Windows PowerShell** (blue icon) in the results. A dark window opens.
+4. Click once inside that window so it's focused. (To paste later: **right-click**
+   pastes whatever you copied, or use **Ctrl + V**. Always press **Enter** to run a
+   line.)
+5. Type or paste this line, then press **Enter** — it moves you into the project
+   folder:
+   ```powershell
+   cd "C:\Users\acer\.claude\projects\uteont\.claude\worktrees\thirsty-satoshi-0601ab"
+   ```
+   The start of the line should now show that long path. If it says *"Cannot find
+   path"*, stop and tell me — don't continue.
+
+---
+
+### STEP 1 — Add the new database column (migration 0011)
+
+*Goal: add the `scheduled_at` column the new code needs. Without it, creating jobs
+breaks. This runs against **production**, which is correct — that's why it's first.*
+
+1. In the PowerShell window (still in the project folder from above), type and Enter:
+   ```powershell
+   npm run db:push
+   ```
+2. Wait 10–60 seconds while it contacts the database. Then one of two things happens:
+   - It prints the changes and **applies them immediately**, returning to a normal
+     prompt → you're done, go to step 4 below.
+   - It prints the changes and **asks you to confirm** (a `[y/N]`, or a little menu
+     you move through with the **arrow keys** + **Enter**).
+3. **Read the list of changes.** ✅ It is safe to approve if every line is an
+   *addition*, e.g.:
+   - "add column `scheduled_at`" on the `jobs` table
+   - "create index `jobs_claim_idx`"
+   - "create table …" for any tables it says are missing
+   To approve: type **`y`** and Enter, or pick the **"Yes / apply"** option and Enter.
+4. 🛑 **Do NOT approve — press `Ctrl + C` to cancel — if you see** any of: *drop*,
+   *delete*, *truncate*, *rename*, or any warning about **data loss**. Take a
+   screenshot and send it to me instead.
+5. **Confirm it worked:** open your browser, log in to the app, then visit:
+   ```
+   https://<your-app-domain>/api/db-status
+   ```
+   (same domain you log in to). It should report **no missing tables**. If it lists
+   missing tables, tell me.
+
+---
+
+### STEP 2 — Rotate the leaked secrets & move prod creds off your laptop
+
+**2a — Set a new admin password (MANDATORY).** *Your current one was captured in
+old screenshots/chat; treat it as compromised.*
+
+1. Open **Telegram** (phone or desktop).
+2. Open the chat with your **UTEONT bot** (the one that sends you job alerts).
+3. Type **`/setpassword-url`** and send it.
+4. The bot replies with a **link** (`https://…`). Tap/click it — a password page opens.
+5. Type a **brand-new** strong password (12+ characters, not a variant of the old
+   one). Re-type it if asked. Click the **Save / Submit** button.
+6. **Test it:** open the app's login page, log out if you're logged in, and log in
+   with the **new** password. Then try the **old** one — it must be **rejected**.
+
+**2b — Point your local `.env.local` at a safe copy of the database (RECOMMENDED).**
+*Right now that file holds your production database address in plain text.*
+
+1. In your browser go to **https://console.neon.tech** and log in.
+2. Click your **UTEONT** project to open it.
+3. In the left menu, click **Branches**.
+4. Click **New Branch** (top-right, labeled "New Branch" / "Create branch").
+5. Name it **`dev`**. For the source/parent pick your main branch (often `main` or
+   `production`) and "from current data". Click **Create**.
+6. Click the new **`dev`** branch, find **Connection string** (or a **Connect**
+   button). If there's a "show password"/eye toggle, turn it on so the password is
+   included. **Copy** the whole string (it starts with `postgresql://`).
+7. Open the project folder: press **Windows key + E** (File Explorer), click the
+   **address bar** at the top, paste this and Enter:
+   ```
+   C:\Users\acer\.claude\projects\uteont\.claude\worktrees\thirsty-satoshi-0601ab
+   ```
+8. If you don't see a file called **`.env.local`**: in File Explorer click the
+   **View** menu → tick **Hidden items**.
+9. **Right-click `.env.local` → Open with → Notepad.**
+10. Find the line that starts with **`DATABASE_URL=`**. Carefully select everything
+    **after** the `=` and replace it with the `dev` connection string you copied.
+    Keep `DATABASE_URL=` at the front, no spaces, no quotes (match the other lines).
+11. **Save** (Ctrl + S) and close Notepad. Local work now uses the safe `dev` copy.
+
+**2c — Rotate the production DB password (ONLY if the laptop was shared/synced, or
+to be safe).**
+
+1. Neon console → your project → left menu **Roles** (or **Settings → Roles**).
+2. Find the role whose name matches your production connection string. Click its
+   **⋯** menu → **Reset password**. Confirm. Neon shows a **new** password / new
+   connection string — copy it.
+3. Put the new string in **two** places:
+   - **Vercel:** https://vercel.com → log in → click the **UTEONT** project →
+     **Settings** (top) → **Environment Variables** (left) → find `DATABASE_URL`,
+     click **Edit** (pencil / ⋯), make sure **Production** is ticked, paste, **Save**.
+   - **Railway (the worker):** https://railway.app → log in → open the UTEONT worker
+     → **Variables** tab → click `DATABASE_URL`, paste the new value, **Save**
+     (Railway redeploys itself).
+4. **Redeploy Vercel:** Vercel → your project → **Deployments** tab → on the newest
+   one click **⋯ → Redeploy → Redeploy**.
+5. ⚠️ **The `CONNECTION_ENCRYPTION_KEY` is different — leave it alone unless you
+   believe that key itself leaked.** Changing it makes stored integration logins
+   (e.g. Google Search Console) undecryptable, and you'd have to reconnect them
+   (Settings → Integrations → reconnect).
+
+---
+
+### STEP 3 — Switch on the pre-commit secret scanner
+
+1. Back in **PowerShell** (still in the project folder), type and Enter:
+   ```powershell
+   npm run prepare
+   ```
+   It finishes in a second or two.
+2. **Confirm it worked** — type and Enter:
+   ```powershell
+   git config core.hooksPath
+   ```
+   It should print **`.husky`**. (If it prints nothing, run `npm install` and retry.)
+3. **Optional** (makes the scan actually run; without it the check just prints a
+   notice and lets you commit). Type and Enter:
+   ```powershell
+   winget install gitleaks.gitleaks
+   ```
+   If it asks you to agree to source terms, type **`y`** and Enter. If `winget`
+   isn't found or it errors, skip this — nothing breaks.
+
+---
+
+### STEP 4 — Backup-restore drill (and write down the timings)
+
+Follow the existing **"Backup + restore (Neon) → To verify backup works"** procedure
+above (steps 1–10). In short:
+
+1. Neon console → **Branches → New Branch** → source **`production`**, time **1 hour
+   ago**, name **`backup-drill-2026-06-22`** → **Create**.
+2. Open that branch's **SQL Editor** (left menu, with the drill branch selected) and run:
+   ```sql
+   select count(*) from jobs;
+   select count(*) from sites;
+   ```
+   Confirm you get sensible row counts (data is present, no errors).
+3. Note **how long** the whole thing took from start to seeing data (**RTO**) and how
+   far back Neon let you go (**RPO** = its retention window, ~24h on the free tier).
+4. **Delete** the drill branch (Branches → the drill branch → ⋯ → Delete).
+5. Edit line **"Last drill: never"** in the *Backup + restore* section above to read,
+   e.g.: `**Last drill**: 2026-06-22 — RTO ~5 min, RPO 24h`.
+
+---
+
+### Done-when checklist
+- [ ] **1** `npm run db:push` approved (additions only) → `/api/db-status` shows no missing tables
+- [ ] **2a** new admin password set via Telegram, old one rejected
+- [ ] **2b** `.env.local` `DATABASE_URL` now points at the Neon `dev` branch
+- [ ] **2c** *(if needed)* prod password rotated in Neon + Vercel + Railway + redeployed
+- [ ] **3** `git config core.hooksPath` prints `.husky`
+- [ ] **4** drill done, "Last drill" line updated above
+
+Once **1** and **2** are done, this branch is safe to merge/deploy.
+
 ## Document control
 
-This file is updated by the operator when procedures change. Most-recent change: initial draft.
+This file is updated by the operator when procedures change. Most-recent change:
+added the 2026-06-22 release runbook for branch `claude/thirsty-satoshi-0601ab`.

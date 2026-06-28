@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { sites, siteIntegrations } from "@/lib/db/schema";
+import { sites, siteIntegrations, decisionRecords } from "@/lib/db/schema";
 import { startRun, finishRun } from "@/lib/services/runs";
 import { runPerformanceTracking, loadGscConfig } from "@/lib/agent-runners/performance-tracking";
 import { snapshotAllActiveTargets } from "@/lib/services/target-snapshots";
@@ -9,8 +9,9 @@ import { notifySlackForSite } from "@/lib/services/slack-notify";
 import { runReoptimizationScan } from "@/lib/services/reoptimization";
 import { upsertMetrics, toDayString, type MetricPoint } from "@/lib/services/metrics-timeseries";
 import { fetchGscPageQueryRows } from "@/lib/integrations/gsc";
-import { detectCannibalization } from "@/lib/services/cannibalization";
+import { detectCannibalization, dedupeFindingsAgainstRecorded } from "@/lib/services/cannibalization";
 import { recordDecision } from "@/lib/services/decision-records";
+import { getFlag } from "@/lib/services/flags";
 
 /**
  * Daily cron — the once-a-day heartbeat.
@@ -27,6 +28,13 @@ export async function GET() {
   let reoptCandidates = 0;
   let metricsWritten = 0;
   let cannibalizationFindings = 0;
+
+  // N-25 — kill switch. The intelligence engine (per-site GSC metrics + the
+  // cannibalization scan below) only runs when its flag is on. Flag off →
+  // skip the whole block (snapshots still run) and report it explicitly.
+  const engineEnabled = await getFlag("intelligence_engine");
+
+  if (engineEnabled) {
   try {
     const db = getDb();
     const rows = await db
@@ -98,7 +106,29 @@ export async function GET() {
                 position: r.position,
               })),
             );
-            for (const f of findings.slice(0, 25)) {
+
+            // N-14 — idempotent on (siteId, query, day). No unique constraint
+            // exists on decision_records, so guard with check-then-skip: read
+            // the cannibalization decisions already written for this site today
+            // and drop findings whose query is already recorded. A daily cron is
+            // not concurrent, so this fully prevents duplicates on a re-fire.
+            const startOfDay = new Date(`${toDayString()}T00:00:00.000Z`);
+            const existing = await db
+              .select({ inputs: decisionRecords.inputs })
+              .from(decisionRecords)
+              .where(
+                and(
+                  eq(decisionRecords.siteId, siteId),
+                  eq(decisionRecords.subjectKey, "loop.cannibalization"),
+                  gte(decisionRecords.createdAt, startOfDay),
+                ),
+              );
+            const recordedQueries = existing
+              .map((r) => r.inputs?.query)
+              .filter((q): q is string => typeof q === "string");
+            const fresh = dedupeFindingsAgainstRecorded(findings, recordedQueries);
+
+            for (const f of fresh.slice(0, 25)) {
               await recordDecision({
                 siteId,
                 subjectKey: "loop.cannibalization",
@@ -126,6 +156,9 @@ export async function GET() {
   } catch (e) {
     console.warn("[cron.daily] performance pull failed:", e);
   }
+  } else {
+    console.info("[cron.daily] intelligence_engine flag off — skipping metrics + cannibalization block");
+  }
 
   let snapshots = 0;
   try {
@@ -136,6 +169,8 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
+    engineDisabled: !engineEnabled,
+    ...(engineEnabled ? {} : { message: "engine disabled by flag" }),
     performance: { sites: perfSites, pulled: perfPulled },
     reoptimization: { candidates: reoptCandidates },
     metrics: { written: metricsWritten },

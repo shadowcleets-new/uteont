@@ -1,8 +1,9 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import {
   gscDateRange, buildSearchAnalyticsBody, summarizeSearchAnalytics, buildConsentUrl, candidatePropertyUrls,
   buildSearchAnalyticsBodyByDate, buildSearchAnalyticsBodyByQuery, parseDailyRows, parseQueryRows,
   buildSearchAnalyticsBodyByPage, parsePageRows,
+  buildSignedState, verifySignedState,
 } from "./gsc";
 
 const DAY = 86_400_000;
@@ -181,5 +182,38 @@ describe("parseQueryRows", () => {
   it("returns [] for empty/malformed payloads", () => {
     expect(parseQueryRows({})).toEqual([]);
     expect(parseQueryRows(undefined)).toEqual([]);
+  });
+});
+
+describe("OAuth signed state (N-17 CSRF)", () => {
+  const orig = process.env.AUTH_SECRET;
+  beforeEach(() => { process.env.AUTH_SECRET = "test-secret-for-state"; });
+  afterEach(() => {
+    if (orig === undefined) delete process.env.AUTH_SECRET;
+    else process.env.AUTH_SECRET = orig;
+  });
+
+  it("round-trips: a state signed for a site verifies with its nonce cookie", () => {
+    const signed = buildSignedState(42);
+    expect(signed).not.toBeNull();
+    expect(verifySignedState(signed!.state, signed!.nonce)).toBe(42);
+  });
+
+  it("rejects a state whose nonce doesn't match the cookie (foreign/replayed)", () => {
+    const signed = buildSignedState(42);
+    expect(verifySignedState(signed!.state, "a-different-nonce")).toBeNull();
+  });
+
+  it("rejects a tampered payload (HMAC mismatch)", () => {
+    const signed = buildSignedState(7)!;
+    const [, sig] = signed.state.split(".");
+    const forged = `${Buffer.from(JSON.stringify({ siteId: 999, nonce: signed.nonce })).toString("base64url")}.${sig}`;
+    expect(verifySignedState(forged, signed.nonce)).toBeNull();
+  });
+
+  it("fails closed when no server secret is configured", () => {
+    delete process.env.AUTH_SECRET;
+    expect(buildSignedState(1)).toBeNull();
+    expect(verifySignedState("anything", "nonce")).toBeNull();
   });
 });

@@ -26,12 +26,48 @@ stdlib HTTP GET, robots honouring, and a last-good cache.
 # #region 1. Imports & Dependencies
 from __future__ import annotations
 
+import ipaddress
+import socket
 import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 from typing import Callable, Dict, Optional
+# #endregion
+
+
+# #region 1b. SSRF guard (N-09)
+def assert_public_url(url: str, *, _resolver: Callable = socket.getaddrinfo) -> None:
+    """Raise ValueError unless ``url`` is a public http(s) URL.
+
+    SSRF guard: rejects non-http(s) schemes and any host that resolves to a
+    loopback / private / link-local / reserved / multicast / unspecified
+    address (so a crafted URL can't make the worker reach the cloud metadata
+    endpoint, localhost, or the internal network). ``_resolver`` is injectable
+    so tests can drive resolution without real DNS."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"refusing non-http(s) URL: {url!r}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError(f"refusing URL with no host: {url!r}")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        infos = _resolver(host, port, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise ValueError(f"cannot resolve host {host!r}: {exc}") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError(f"refusing non-public address {ip} for host {host!r}")
 # #endregion
 
 
@@ -198,17 +234,29 @@ class ResilientFetcher:
         return self._breakers[domain]
 
     def _robots_ok(self, url: str, domain: str, scheme: str) -> bool:
+        rp = self._robots.get(domain)
+        if rp is None:
+            rp = RobotFileParser()
+            # N-16: RobotFileParser.read() does a urlopen with NO timeout and can
+            # hang the whole fetch path. Fetch robots.txt ourselves with a timeout,
+            # then parse. Always store the parser (even on failure) so a dead/slow
+            # robots host is negative-cached, not re-fetched on every request.
+            try:
+                req = urllib.request.Request(
+                    f"{scheme}://{domain}/robots.txt",
+                    headers={"User-Agent": self.user_agent},
+                )
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    text = resp.read().decode("utf-8", errors="replace")
+                rp.parse(text.splitlines())
+            except Exception:
+                # Unreachable/slow robots → best-effort allow, but cache that
+                # decision so we don't keep hanging/hammering on it.
+                rp.allow_all = True
+            self._robots[domain] = rp
         try:
-            rp = self._robots.get(domain)
-            if rp is None:
-                rp = RobotFileParser()
-                rp.set_url(f"{scheme}://{domain}/robots.txt")
-                rp.read()
-                self._robots[domain] = rp
             return rp.can_fetch(self.user_agent, url)
         except Exception:
-            # If robots is unreachable, default to allowed (best-effort), but the
-            # token bucket + throttle still keep us polite.
             return True
 
     def get(self, url: str) -> Optional[str]:
@@ -219,6 +267,13 @@ class ResilientFetcher:
         domain = parsed.netloc
         scheme = parsed.scheme or "https"
         if not domain:
+            return None
+
+        # N-09: SSRF guard before any network I/O. A non-public target is refused
+        # (returns None) rather than fetched — get() never raises by contract.
+        try:
+            assert_public_url(url)
+        except ValueError:
             return None
 
         breaker = self._breaker(domain)

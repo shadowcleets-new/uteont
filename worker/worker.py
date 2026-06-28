@@ -239,8 +239,16 @@ def main() -> int:
         signal.signal(signal.SIGTERM, _on_signal)
 
     _health_state["started_at"] = datetime.now(timezone.utc).isoformat()
-    if os.environ.get("WORKER_HEALTH_PORT", "8080"):
-        _start_health_server(int(os.environ.get("WORKER_HEALTH_PORT", "8080")))
+    # N-28: explicit disable sentinels. The old `if env.get(..., "8080"):` guard
+    # was a no-op — any non-empty value (including "0"/"off") is truthy, so the
+    # health server could never be turned off. Treat a small set of falsy
+    # sentinels as "disabled"; otherwise parse the port.
+    health_port_raw = os.environ.get("WORKER_HEALTH_PORT", "8080").strip()
+    if health_port_raw.lower() not in ("", "0", "off", "false", "no", "disabled"):
+        try:
+            _start_health_server(int(health_port_raw))
+        except ValueError:
+            log.warning("invalid WORKER_HEALTH_PORT=%r — health server disabled", health_port_raw)
 
     client = from_env()
     agent_keys = [k.strip() for k in
@@ -263,8 +271,14 @@ def main() -> int:
             time.sleep(POLL_INTERVAL)
             continue
 
-        job_id = job["id"]
-        agent_key = job["agentKey"]
+        # N-29: a malformed claim payload (missing id/agentKey) must not crash the
+        # poll loop with an unhandled KeyError — log it and keep polling.
+        job_id = job.get("id")
+        agent_key = job.get("agentKey")
+        if job_id is None or not agent_key:
+            log.error("malformed claim payload, skipping: %r", job)
+            time.sleep(POLL_INTERVAL)
+            continue
         payload = job.get("payload") or {}
         attempts = int(job.get("attempts") or 0)
         log.info("claimed job %d for agent='%s' (attempt %d)", job_id, agent_key, attempts)

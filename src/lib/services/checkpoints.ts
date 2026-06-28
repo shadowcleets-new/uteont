@@ -20,6 +20,29 @@ export class CheckpointError extends Error {
   }
 }
 
+/**
+ * A DB error that should surface as retryable (vs. a legitimate not-found).
+ * Carries `retryable: true` so callers/UI can offer a "try again" instead of
+ * treating a transient blip as a vanished checkpoint.
+ */
+export class CheckpointDbError extends Error {
+  readonly retryable = true;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "CheckpointDbError";
+  }
+}
+
+/**
+ * Postgres 42P01 = relation does not exist. The `checkpoints` migration is
+ * staged but only applied once the DB is reachable, so a missing table is a
+ * legitimate "degrade to empty/none" — NOT a transient DB error to retry.
+ */
+function isTableMissing(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /relation .* does not exist/i.test(msg) || msg.includes("42P01");
+}
+
 export interface CreateCheckpointInput {
   siteId?: number | null;
   gate: string;
@@ -68,13 +91,24 @@ export async function countPending(siteId?: number): Promise<number> {
   return (await listCheckpoints({ status: "pending", siteId })).length;
 }
 
+/**
+ * Returns the checkpoint or `null` if it genuinely doesn't exist (no row, or
+ * the table isn't migrated yet). A real DB error (e.g. a transient Neon blip)
+ * is logged and rethrown as a retryable {@link CheckpointDbError} so a decision
+ * doesn't silently masquerade as "not found".
+ */
 export async function getCheckpoint(id: number): Promise<Checkpoint | null> {
   try {
     const db = getDb();
     const [row] = await db.select().from(checkpoints).where(eq(checkpoints.id, id)).limit(1);
     return row ?? null;
-  } catch {
-    return null;
+  } catch (e) {
+    if (isTableMissing(e)) {
+      console.warn("getCheckpoint: checkpoints table missing (not migrated yet)", e);
+      return null;
+    }
+    console.warn(`getCheckpoint: DB error for id=${id} (retryable)`, e);
+    throw new CheckpointDbError(`Failed to read checkpoint ${id}`, { cause: e });
   }
 }
 
@@ -106,8 +140,8 @@ export async function decideCheckpoint(
         note: opts.note,
         channel: "web",
       });
-    } catch {
-      /* audit is best-effort */
+    } catch (e) {
+      console.warn("decideCheckpoint: recordApproval failed (audit is best-effort)", e);
     }
   }
 

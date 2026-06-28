@@ -33,8 +33,17 @@ export async function isAgentPaused(agentKey: string): Promise<boolean> {
       .where(and(eq(agentState.agentKey, agentKey), eq(agentState.paused, true)))
       .limit(1);
     return Boolean(row);
-  } catch {
-    return false; // fail open — never block a run because state is unreadable
+  } catch (e) {
+    // Fail OPEN — never block a run because state is unreadable — but log the
+    // DB error so the swallowed blip is observable (a missing table is just
+    // "not provisioned yet"; anything else is a real, surfaceable error).
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/relation .* does not exist/i.test(msg) || msg.includes("42P01")) {
+      console.warn(`isAgentPaused(${agentKey}): agent_state table missing (failing open)`, e);
+    } else {
+      console.warn(`isAgentPaused(${agentKey}): DB error (failing open)`, e);
+    }
+    return false;
   }
 }
 

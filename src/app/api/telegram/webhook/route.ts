@@ -45,6 +45,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "bad json" }, { status: 400 });
   }
 
+  // N-19: the shared-secret header (verified upstream in middleware.ts) proves
+  // the request came from Telegram, but NOT that the message came from the
+  // operator. The body's chat.id is attacker-controllable for anyone who learns
+  // the secret or adds the bot to another chat. Gate every update on the
+  // configured operator chat id so a non-allowlisted chat performs no action.
+  const incomingChatId = extractChatId(update);
+  const adminChatId = await getAdminChatId();
+  if (!isAllowlistedChat(incomingChatId, adminChatId)) {
+    // Ignore silently — 200 so Telegram doesn't retry, but take no action and
+    // send no reply to the unauthorized chat.
+    return NextResponse.json({ ok: true, handled: "ignored" });
+  }
+
   const cb = update.callback_query as Record<string, unknown> | undefined;
   if (cb && typeof cb.data === "string" && typeof cb.id === "string") {
     const data = cb.data;
@@ -118,6 +131,44 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, handled: "ignored" });
+}
+
+// ------------------------------------------------------------------------
+// Operator allowlist (N-19)
+// ------------------------------------------------------------------------
+
+/**
+ * Pull the originating chat id out of either update shape Telegram sends:
+ * a callback_query (button press) nests the chat under
+ * `callback_query.message.chat.id`; a plain message has `message.chat.id`.
+ * Returns the chat id as a string, or undefined when the update carries no
+ * chat (e.g. inline_query, channel_post, or a malformed body).
+ */
+export function extractChatId(update: Record<string, unknown>): string | undefined {
+  const cb = update.callback_query as Record<string, unknown> | undefined;
+  const cbMessage = cb?.message as Record<string, unknown> | undefined;
+  const cbChat = cbMessage?.chat as Record<string, unknown> | undefined;
+  if (cbChat && cbChat.id != null) return String(cbChat.id);
+
+  const msg = update.message as Record<string, unknown> | undefined;
+  const msgChat = msg?.chat as Record<string, unknown> | undefined;
+  if (msgChat && msgChat.id != null) return String(msgChat.id);
+
+  return undefined;
+}
+
+/**
+ * The operator allowlist decision. Only the single configured operator chat is
+ * allowed to act. When the admin chat id is unconfigured (no DB value and no
+ * TELEGRAM_CHAT_ID env), nothing is allowlisted — fail closed.
+ */
+export function isAllowlistedChat(
+  incomingChatId: string | undefined,
+  adminChatId: string | null,
+): boolean {
+  if (!adminChatId) return false;
+  if (!incomingChatId) return false;
+  return incomingChatId === adminChatId;
 }
 
 // ------------------------------------------------------------------------

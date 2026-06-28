@@ -242,7 +242,11 @@ export async function verifyCredentials(
   if (username.trim() !== cfg.username) return false;
   try {
     return await bcrypt.compare(password, cfg.passwordHash);
-  } catch {
+  } catch (e) {
+    // A malformed/corrupt stored hash throws here. Deny login (fail closed),
+    // but surface it — a silent false would hide a broken credential row that
+    // locks the admin out with no clue why.
+    console.warn("[auth-config.verifyCredentials] bcrypt.compare threw (denying login)", e);
     return false;
   }
 }
