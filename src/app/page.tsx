@@ -53,10 +53,15 @@ export default async function DashboardPage() {
     getActiveSiteIdServer(),
   ]);
 
-  // Recent runs, filtered by active site when one is selected
-  const recent = activeSiteId
-    ? await listRuns(undefined, 20, { siteId: activeSiteId })
-    : await listRuns(undefined, 20);
+  // Recent runs, filtered by active site when one is selected.
+  // N-13: degrade to an empty list if the DB is unreachable, so the dashboard
+  // still renders (showing "DATABASE: Unreachable") instead of throwing into
+  // error.tsx — getActiveSiteIdServer/getSystemStatus already degrade, but the
+  // calls AFTER the Promise.all must too.
+  const recent = await (activeSiteId
+    ? listRuns(undefined, 20, { siteId: activeSiteId })
+    : listRuns(undefined, 20)
+  ).catch(() => [] as Awaited<ReturnType<typeof listRuns>>);
 
   // Objectives for the selected site: derive both the display list and the
   // single recommended action from the full set (so the nudge isn't capped).
@@ -106,7 +111,11 @@ export default async function DashboardPage() {
   const siteRows =
     siteIds.length === 0
       ? []
-      : await db.select().from(sites).where(inArray(sites.id, siteIds));
+      : await db
+          .select()
+          .from(sites)
+          .where(inArray(sites.id, siteIds))
+          .catch(() => []); // N-13: degrade rather than throw if the DB drops here
   const siteById = new Map(siteRows.map((s) => [s.id, s]));
 
   const totalRuns = Object.values(stats).reduce((acc, s) => acc + s.totalRuns, 0);
