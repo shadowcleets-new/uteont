@@ -1,4 +1,4 @@
-import { eq, and, ne, sql, desc } from "drizzle-orm";
+import { eq, and, notInArray, sql, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { jobs, runs, keywords, ideas, articles } from "@/lib/db/schema";
 import { notifyJobSuccess, notifyJobFailure } from "./notify-job";
@@ -389,16 +389,18 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
 export async function completeJob(jobId: number, result: Record<string, unknown>) {
   const db = getDb();
 
-  // A-04 / N-01: idempotent completion. Gate the transition on the job still
-  // being 'claimed' and only apply side-effects when THIS call actually flipped
-  // it to 'done'. A duplicate/late worker report (e.g. the complete HTTP call
-  // timed out after the server committed, so the worker retried) returns no row
-  // here and becomes a safe no-op — no second runs row, no re-persisted
-  // entities, no double notification.
+  // A-04 / N-01: idempotent completion. Atomically flip the job to 'done' ONLY
+  // from a non-terminal state, and apply side-effects only when THIS call did
+  // the flip. A duplicate/late worker report (e.g. the complete HTTP call timed
+  // out after the server committed, so the worker retried) finds the job already
+  // 'done', returns no row, and becomes a safe no-op — no second runs row, no
+  // re-persisted entities, no double notification. (Gating on non-terminal
+  // rather than 'claimed' avoids silently dropping a result on the rare
+  // unclaimed-completion path; production always completes a claimed job.)
   const [job] = await db
     .update(jobs)
     .set({ status: "done", finishedAt: new Date(), result })
-    .where(and(eq(jobs.id, jobId), eq(jobs.status, "claimed")))
+    .where(and(eq(jobs.id, jobId), notInArray(jobs.status, ["done", "failed"])))
     .returning();
   if (!job) return;
   await recordJobEvent(jobId, "claimed", "done"); // IP-13 lifecycle audit
@@ -580,9 +582,10 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
   // job is not claimable until the backoff elapses (claim query gates on it).
   const scheduledAt = shouldRetry ? new Date(Date.now() + retryBackoffMs(row.attempts)) : null;
   // A-04 / N-01: the transition is ATOMICALLY guarded on the job NOT already
-  // being 'done'. A read-then-write check would race a concurrent completeJob;
-  // `WHERE status != 'done' RETURNING` lets exactly one of them win — if no row
-  // comes back, completion already happened and this fail is a safe no-op.
+  // being terminal. A read-then-write check would race a concurrent completeJob;
+  // `WHERE status NOT IN ('done','failed') RETURNING` lets exactly one win — if
+  // no row comes back, the job is already terminal and this fail is a safe no-op
+  // (and a late retry can't resurrect an already-'failed' job back to 'queued').
   const [updated] = await db
     .update(jobs)
     .set({
@@ -593,7 +596,7 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       finishedAt: shouldRetry ? null : new Date(),
       error,
     })
-    .where(and(eq(jobs.id, jobId), ne(jobs.status, "done")))
+    .where(and(eq(jobs.id, jobId), notInArray(jobs.status, ["done", "failed"])))
     .returning({ id: jobs.id });
   if (!updated) return;
   // IP-13 — record the transition (a retry re-queues; otherwise it's terminal).
