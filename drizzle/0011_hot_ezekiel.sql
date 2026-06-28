@@ -1,0 +1,2 @@
+ALTER TABLE "jobs" ADD COLUMN "scheduled_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "jobs_claim_idx" ON "jobs" USING btree ("agent_key","priority" DESC NULLS LAST,"id") WHERE "jobs"."status" = 'queued';

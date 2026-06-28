@@ -133,6 +133,12 @@ export const jobs = pgTable(
       // queued | claimed | done | failed
     claimedBy:    text("claimed_by"),
     claimedAt:    timestamp("claimed_at", { withTimezone: true }),
+    // F-025: server-authoritative retry backoff. When a job is failed-for-retry
+    // it is requeued with scheduled_at = now() + backoff; the claim query only
+    // pulls jobs whose scheduled_at <= NOW() (NULL = immediately claimable). This
+    // makes the backoff hold across worker restarts and any worker count, instead
+    // of relying on the in-worker sleep that a concurrent/restarted worker ignores.
+    scheduledAt:  timestamp("scheduled_at", { withTimezone: true }),
     finishedAt:   timestamp("finished_at", { withTimezone: true }),
     result:       jsonb("result"),
     error:        text("error"),
@@ -147,6 +153,11 @@ export const jobs = pgTable(
     byAgent:  index("jobs_agent_idx").on(t.agentKey),
     byCycle:  index("jobs_cycle_idx").on(t.cycleId),
     bySite:   index("jobs_site_idx").on(t.siteId),
+    // N-24: partial composite index supporting the hot worker-claim query
+    // (WHERE status='queued' AND agent_key IN (...) ORDER BY priority DESC, id ASC).
+    byClaim:  index("jobs_claim_idx")
+      .on(t.agentKey, t.priority.desc(), t.id)
+      .where(sql`${t.status} = 'queued'`),
   }),
 );
 

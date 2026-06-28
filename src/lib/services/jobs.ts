@@ -303,6 +303,7 @@ export async function claimNextJob(workerId: string, agentKeys: string[]) {
       SELECT id FROM jobs
       WHERE status = 'queued'
         AND agent_key IN (${sql.join(agentKeys.map((k) => sql`${k}`), sql`, `)})
+        AND (scheduled_at IS NULL OR scheduled_at <= NOW())
       ORDER BY priority DESC, id ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -508,11 +509,26 @@ async function persistArticle(
   });
 }
 
+/**
+ * Server-authoritative retry backoff (F-025). Mirrors the worker's curve
+ * (attempts=N → 2^N * 5s, capped at 5 min) but is enforced via the jobs.
+ * scheduled_at column + the claim query's `scheduled_at <= NOW()` gate, so the
+ * delay holds across worker restarts and any worker count — not just the
+ * in-process sleep of the worker that happened to fail.
+ */
+function retryBackoffMs(attempts: number): number {
+  const seconds = Math.min(300, 5 * 2 ** Math.max(0, attempts));
+  return seconds * 1000;
+}
+
 export async function failJob(jobId: number, error: string, retry: boolean) {
   const db = getDb();
   const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   if (!row) return;
   const shouldRetry = retry && row.attempts < row.maxAttempts;
+  // F-025: when requeuing for retry, stamp scheduled_at = now + backoff so the
+  // job is not claimable until the backoff elapses (claim query gates on it).
+  const scheduledAt = shouldRetry ? new Date(Date.now() + retryBackoffMs(row.attempts)) : null;
   // Terminal-state guard (N-01): never resurrect a job that already reached a
   // terminal state. A worker whose /complete call timed out AFTER the server
   // committed retries via fail_job(retry=true); without this, that stale failure
@@ -524,6 +540,7 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       status: shouldRetry ? "queued" : "failed",
       claimedBy: null,
       claimedAt: null,
+      scheduledAt, // F-025: now+backoff on retry; null otherwise
       finishedAt: shouldRetry ? null : new Date(),
       error,
     })
