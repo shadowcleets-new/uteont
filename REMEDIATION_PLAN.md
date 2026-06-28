@@ -2,6 +2,24 @@
 
 **Generated:** 2026-06-20 · **Branch:** `claude/thirsty-satoshi-0601ab`
 
+> ### Progress — 2026-06-22 (all engineer/Claude items resolved)
+> Every code finding below is now fixed and committed on this branch (`bcc09bb`,
+> `8f2b761`, `c54f60c`, `7b9b8ca`, `d077b97`, `a7003ae`, `6466c8b`), on top of the
+> earlier Wave 0 + N-04/N-12/N-13/N-20 work. `tsc --noEmit` clean, worker
+> `pytest` 32 pass, Vitest 394 pass. The only 5 "failing" Vitest cases are
+> live-DB integration tests that need migration **0011** applied first (they
+> insert into the real `jobs` table, which lacks `scheduled_at` until then).
+> **N-26** (content-safety wiring) stays deferred — no live publish executor to
+> attach it to yet. **DOC-1** is left to the operator: `GAPS_REPORT.md`'s own
+> policy forbids autonomous edits ("update the gaps report" required).
+>
+> **Operator actions still required** (cannot be done in-repo):
+> 1. Apply migration **0011** to the DB (`npm run db:push`) **before** this
+>    branch deploys — else job enqueue breaks (F-034-class hazard).
+> 2. Rotate the admin password (SEC-1) and prod Neon creds + encryption key (SEC-2).
+> 3. Run `npm install` once so the pre-commit hook activates (F-032).
+> 4. Run the Neon backup-restore drill (F-026).
+
 A holistic findings summary + prioritized fix plan, produced by a 7-dimension parallel
 audit (finders ran real `tsc` / `vitest` / `next build` / `py_compile`) plus an automated
 security pass. Companion to `GAPS_REPORT.md` — this file is the **forward plan**;

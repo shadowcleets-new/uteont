@@ -4,44 +4,40 @@
 > Keep ≤100 lines.
 
 ## 1. Current Focus
-**Remediation (2026-06-20).** A 7-dimension audit produced `REMEDIATION_PLAN.md`
-(36 findings: 2 critical, 7 high). Wave 0 in progress — N-01/N-03/N-08 landed +
-verified (tsc clean; jobs-idempotency.test.ts 3/3 + dispatch 2/2 pass). Branch
-still not pushed; migrations 0010–0014 still unapplied. Prior: IMPROVEMENT_PLAN
-moat+foundations on this branch (a23a1ab→b356c13).
+**Remediation COMPLETE (2026-06-22).** All engineer/Claude findings from
+`REMEDIATION_PLAN.md` (Wave 0–3) are fixed, tested, committed on branch
+`claude/thirsty-satoshi-0601ab`. Awaiting operator DB/secret actions before
+merge/deploy. Branch not pushed.
 
 ## 2. Current Milestone Status
-- Implemented + fully gated (tsc/eslint/vitest/build + py tests):
-  - Substrate: `metrics_timeseries` (IP-10), `job_events` (IP-13),
-    `publish_receipts` (IP-07) — schema + idempotent migrations 0012–0014.
-  - Pure TS cores: information-gain (IP-04), cannibalization (IP-42),
-    reopt-triggers (IP-06), cost-ledger (IP-14), flags (IP-36), redact-pii
-    (IP-65), content-safety (IP-90), publishing decision (IP-07).
-  - Python worker cores: fetcher (IP-15), semantic profile (IP-03),
-    trend scoring (IP-01), SERP parse (IP-02).
-  - Live wiring: daily cron stores GSC/GA4 metrics + cannibalization scan;
-    jobs lifecycle → job_events; GSC per-(page,query) fetcher;
-    `/cannibalization` page + sidebar.
-- Tests: 336 passing. 25 failing = pre-existing live-DB suites (DATABASE_URL
-  unset → IP-33's hermetic-DB scope), unchanged from baseline.
+- **Wave 0:** N-01/N-03/N-08/N-02/N-07 done. Migration **0011** still to be APPLIED.
+- **Wave 1–3 (engineer):** done this session — 7 commits `bcc09bb`→`6466c8b`
+  (worker SSRF/robots/poll-loop; jobs backoff+index; Gemini budget + kill switch +
+  cron idempotency; login-DoS + GSC OAuth signing + setup-token + telegram allowlist;
+  silent-catch logging + SSE caps + redact-pii fail-closed + director prompt +
+  job_events retention; worker-health monitoring; gitleaks pre-commit + CONTRIBUTING).
+- **Deferred:** N-26 (no publish executor yet); DOC-1 (GAPS_REPORT is operator-controlled).
+- **Verification:** `tsc` clean · Vitest 394 pass / 5 fail · worker `pytest` 32 pass.
+  The 5 fails are all live-DB tests that need migration 0011 applied first.
 
 ## 3. Active Working Context
 - Stack: Next.js 16 (read `node_modules/next/dist/docs/` before app code).
   DB: Neon/Drizzle. Worker: Python/Playwright on Railway.
-- Cores are pure + defensive: a missing (unapplied) table degrades to empty.
-- ⚠️ `node_modules` was wiped mid-session by an external process; restored
-  with `npm ci`. Re-run `npm ci` if `@vercel/analytics/next` fails to resolve.
+- Migration `drizzle/0011_hot_ezekiel.sql` adds `jobs.scheduled_at` + partial claim
+  index. Code already references `scheduled_at` → DB MUST get 0011 before deploy
+  (F-034-class hazard).
+- New surfaces: `.husky/pre-commit` (arm with `npm install`), `CONTRIBUTING.md`,
+  `src/app/api/cron/worker-health/route.ts` (registered in `vercel.json`).
+- ⚠️ `.env.local` holds prod Neon creds (SEC-2) — the "live DB" Vitest cases hit
+  production. Untracked local-only `.claude/launch.json` left uncommitted by design.
 
 ## 4. Roadblocks / cautions
-- Do NOT `db:migrate` blind (F-034). Operator applies 0012–0014 directly.
+- Do NOT `db:migrate` blind (F-034). Operator applies 0011 with `npm run db:push`.
 - Cannibalization/metrics light up only once GSC is connected + cron runs.
-- GSC/GA4/Slack secrets still operator-only (Analytics shows "Modeled").
-- The big engine (IP-01/02 fetch shells, IP-04 wiring into content-brief,
-  IP-05/17/20) is still ahead — only the pure cores + substrate exist.
+- GSC OAuth now requires `AUTH_SECRET` set (state signing fails closed without it).
 
-## 5. Next Immediate Steps
-1. Wave 0 remainder: N-02/N-07 (regenerate drizzle journal 0010–0014), then
-   operator applies migrations + pushes branch.
-2. Wave 1: error boundaries (N-04/N-12/N-13/N-20), budget cap + flag gate
-   (N-06/N-25), login-DoS (N-10). See REMEDIATION_PLAN.md.
-3. Operator: rotate admin password (SEC-1) + point `.env.local` off prod (SEC-2).
+## 5. Next Immediate Steps (operator)
+1. `npm run db:push` to apply migration 0011 (before deploying this branch).
+2. Rotate admin password (SEC-1) + prod Neon creds/encryption key (SEC-2);
+   `npm install` to arm the gitleaks pre-commit hook.
+3. Say "update the gaps report" to authorize DOC-1 (GAPS_REPORT status reconciliation).
