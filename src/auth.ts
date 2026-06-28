@@ -48,27 +48,38 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const password = String(creds?.password ?? "");
         if (!username || !password) return null;
 
-        // F-009 + F-010: rate-limit + audit.
+        // F-009 + F-010 + N-10: rate-limit + audit.
         // Lazy imports to keep the module Edge-compatible at the top level.
         const { isLockedOut, recordAttempt } = await import(
           "@/lib/services/login-attempts"
         );
 
+        // N-10: verify credentials FIRST. A *correct* password must never be
+        // blocked by the lockout — otherwise an attacker flooding wrong
+        // passwords could lock the sole operator out indefinitely (a DoS).
+        // The lockout exists only to throttle *failed* attempts.
+        const ok = await verifyCredentials(username, password);
+
+        if (ok) {
+          // Success forgives/clears the window (see isLockedOut).
+          await recordAttempt(username, true);
+          return {
+            id: "admin",
+            name: username,
+            email: null,
+          };
+        }
+
+        // Wrong password. If already locked out, do NOT record another
+        // failure — that would self-amplify the lockout forever. Just
+        // reject. Otherwise record the failure so the threshold can trip.
         if (await isLockedOut()) {
-          await recordAttempt(username, false);
-          // Returning null produces a generic CredentialsSignin error —
-          // we don't tell attackers they hit a rate limit (less info leak).
+          // Generic CredentialsSignin error — don't reveal the rate limit.
           return null;
         }
 
-        const ok = await verifyCredentials(username, password);
-        await recordAttempt(username, ok);
-        if (!ok) return null;
-        return {
-          id: "admin",
-          name: username,
-          email: null,
-        };
+        await recordAttempt(username, false);
+        return null;
       },
     }),
   ],

@@ -9,11 +9,11 @@
  *   5. consumeSetupToken(token, password) validates + invalidates + hashes
  *
  * Token is a high-entropy URL-safe string. Stored as-is (single-row,
- * single-token table — comparison is constant-time enough for a token
- * with 256 bits of entropy that's invalidated on first use).
+ * single-token table). Comparison is constant-time (crypto.timingSafeEqual)
+ * to avoid a timing oracle on the stored token (N-18).
  */
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { authConfig } from "@/lib/db/schema";
@@ -22,6 +22,22 @@ import { setPassword } from "./auth-config";
 const ROW_ID = 1;
 const TOKEN_BYTES = 32;
 const TTL_MIN = 10;
+
+/**
+ * Constant-time string comparison for the setup token (N-18).
+ *
+ * timingSafeEqual throws on unequal-length buffers, which would itself
+ * leak length via an early throw. We guard length first; an attacker can
+ * already infer the token length (32 bytes → 43-char base64url), so the
+ * length check is not a meaningful oracle, while the byte comparison —
+ * the part that matters — stays constant-time.
+ */
+function tokensMatch(stored: string, provided: string): boolean {
+  const a = Buffer.from(stored, "utf8");
+  const b = Buffer.from(provided, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export async function issueSetupToken(): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(TOKEN_BYTES).toString("base64url");
@@ -64,7 +80,7 @@ export async function consumeSetupToken(token: string, password: string): Promis
   if (!row?.setupToken || !row.setupTokenExpiresAt) {
     throw new Error("No setup link is currently active. Request a new one via Telegram.");
   }
-  if (row.setupToken !== token) {
+  if (!tokensMatch(row.setupToken, token)) {
     throw new Error("This setup link is invalid.");
   }
   const expiresAt = new Date(row.setupTokenExpiresAt as unknown as string);
@@ -83,3 +99,6 @@ export async function consumeSetupToken(token: string, password: string): Promis
 }
 
 export const SETUP_TOKEN_TTL_MIN = TTL_MIN;
+
+// Exported for unit testing the constant-time comparison (N-18).
+export const __test__ = { tokensMatch };

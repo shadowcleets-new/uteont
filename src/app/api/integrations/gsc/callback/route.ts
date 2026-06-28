@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db/client";
 import { sites, siteIntegrations } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
-import { exchangeCodeForTokens } from "@/lib/integrations/gsc";
+import {
+  exchangeCodeForTokens,
+  verifySignedState,
+  GSC_OAUTH_STATE_COOKIE,
+} from "@/lib/integrations/gsc";
 import { createIntegration, updateIntegration } from "@/lib/services/integrations";
 
 /**
@@ -16,20 +20,20 @@ export async function GET(req: NextRequest) {
   const stateRaw = url.searchParams.get("state");
   const googleErr = url.searchParams.get("error");
 
-  let siteId: number | null = null;
-  try {
-    if (stateRaw) {
-      const parsed = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf8")) as { siteId?: number };
-      siteId = Number(parsed.siteId) || null;
-    }
-  } catch {
-    siteId = null;
-  }
+  // N-17: only trust a state whose HMAC verifies AND whose embedded nonce
+  // matches the httpOnly cookie set when this browser started the flow. A
+  // forged or replayed state from another origin yields siteId = null.
+  const cookieNonce = req.cookies.get(GSC_OAUTH_STATE_COOKIE)?.value ?? null;
+  const siteId: number | null = verifySignedState(stateRaw, cookieNonce);
 
   const db = getDb();
   const [site] = siteId ? await db.select().from(sites).where(eq(sites.id, siteId)).limit(1) : [];
-  const back = (q: string) =>
-    NextResponse.redirect(new URL(`/sites/${site?.key ?? ""}/integrations?${q}`, req.url));
+  const back = (q: string) => {
+    const r = NextResponse.redirect(new URL(`/sites/${site?.key ?? ""}/integrations?${q}`, req.url));
+    // Consume the one-shot OAuth nonce cookie on every exit path.
+    r.cookies.delete({ name: GSC_OAUTH_STATE_COOKIE, path: "/api/integrations/gsc" });
+    return r;
+  };
 
   if (googleErr) return back(`error=${encodeURIComponent(`Google: ${googleErr}`)}`);
   if (!code || !siteId || !site) return back(`error=${encodeURIComponent("Missing authorization code or site context.")}`);

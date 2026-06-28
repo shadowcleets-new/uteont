@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db/client";
 import { kvSettings, sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { buildConsentUrl } from "@/lib/integrations/gsc";
+import { buildConsentUrl, buildSignedState, GSC_OAUTH_STATE_COOKIE } from "@/lib/integrations/gsc";
 
 /**
  * Kicks off the Google Search Console OAuth flow for a site (from ?siteId, or
@@ -28,8 +28,19 @@ export async function GET(req: NextRequest) {
     NextResponse.redirect(new URL(`/sites/${site.key}/integrations?error=${encodeURIComponent(m)}`, req.url));
 
   const redirectUri = new URL("/api/integrations/gsc/callback", req.url).toString();
-  const state = Buffer.from(JSON.stringify({ siteId })).toString("base64url");
-  const consent = buildConsentUrl(redirectUri, state);
+  // N-17: sign the OAuth state (HMAC + nonce) and bind the nonce to an httpOnly
+  // cookie so the callback can reject a forged/foreign state (OAuth CSRF).
+  const signed = buildSignedState(siteId);
+  if (!signed) return back("Server auth secret (AUTH_SECRET) is not configured.");
+  const consent = buildConsentUrl(redirectUri, signed.state);
   if (!consent) return back("GOOGLE_OAUTH_CLIENT_ID is not configured on the server.");
-  return NextResponse.redirect(consent);
+  const res = NextResponse.redirect(consent);
+  res.cookies.set(GSC_OAUTH_STATE_COOKIE, signed.nonce, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax", // top-level redirect back from Google still sends it
+    path: "/api/integrations/gsc",
+    maxAge: 600, // 10 min — long enough for the consent round-trip
+  });
+  return res;
 }
