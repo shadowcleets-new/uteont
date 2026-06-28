@@ -10,6 +10,3 @@ praw==7.8.1
 
 # Common
 python-dotenv==1.0.1
-
-# Postgres (for the job poller — when worker.py lands)
-psycopg[binary]==3.2.3

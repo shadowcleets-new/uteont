@@ -29,9 +29,15 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from fetcher import TokenBucket, CircuitBreaker, DomainThrottle
+    from fetcher import (
+        TokenBucket, CircuitBreaker, DomainThrottle, ResilientFetcher,
+        assert_public_url,
+    )
 except ImportError:  # pragma: no cover - package execution path
-    from worker.lib.fetcher import TokenBucket, CircuitBreaker, DomainThrottle
+    from worker.lib.fetcher import (
+        TokenBucket, CircuitBreaker, DomainThrottle, ResilientFetcher,
+        assert_public_url,
+    )
 # #endregion
 
 
@@ -193,6 +199,60 @@ def test_domain_throttle_per_domain_interval():
 # #endregion
 
 
+# #region 5b. SSRF guard + robots tests (N-09, N-16)
+def _resolver_to(ip):
+    """Fake getaddrinfo that always resolves to ``ip`` (no real DNS)."""
+    return lambda host, port, **kw: [(2, 1, 6, "", (ip, port))]
+
+
+def test_assert_public_url_rejects_private_and_loopback():
+    for ip in ("127.0.0.1", "10.0.0.5", "169.254.169.254", "192.168.1.1", "::1"):
+        raised = False
+        try:
+            assert_public_url("http://evil.test/x", _resolver=_resolver_to(ip))
+        except ValueError:
+            raised = True
+        check(raised, f"private/loopback IP {ip} must be refused")
+    # Non-http(s) schemes are refused outright (no resolution needed).
+    for bad in ("file:///etc/passwd", "ftp://host/x", "gopher://host"):
+        raised = False
+        try:
+            assert_public_url(bad)
+        except ValueError:
+            raised = True
+        check(raised, f"non-http(s) URL {bad!r} must be refused")
+
+
+def test_assert_public_url_allows_public():
+    # A public IP passes (8.8.8.8). Should not raise.
+    assert_public_url("https://example.com/x", _resolver=_resolver_to("8.8.8.8"))
+
+
+def test_robots_unreachable_is_negative_cached():
+    # N-16: a failing robots fetch must be cached (allow_all), not re-fetched on
+    # every request — otherwise a slow/dead robots host stalls the fetch path
+    # repeatedly. Count urlopen attempts while forcing them to fail.
+    import urllib.request as _ur
+    calls = {"n": 0}
+
+    def boom(*a, **kw):
+        calls["n"] += 1
+        raise OSError("robots unreachable")
+
+    orig = _ur.urlopen
+    _ur.urlopen = boom
+    try:
+        rf = ResilientFetcher()
+        check(rf._robots_ok("https://x.test/a", "x.test", "https") is True,
+              "unreachable robots → allow")
+        check(rf._robots_ok("https://x.test/b", "x.test", "https") is True,
+              "still allowed on a second call")
+        check(calls["n"] == 1, "robots fetched at most once (negative-cached)")
+    finally:
+        _ur.urlopen = orig
+# #endregion
+
+
 # #region 6. Entrypoint
 def main():
     tests = [
@@ -202,6 +262,9 @@ def main():
         test_token_bucket_capacity_cap,
         test_token_bucket_multi_token_acquire,
         test_domain_throttle_per_domain_interval,
+        test_assert_public_url_rejects_private_and_loopback,
+        test_assert_public_url_allows_public,
+        test_robots_unreachable_is_negative_cached,
     ]
     for t in tests:
         t()
