@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# F-032: scan staged changes for secrets before they enter git history.
+# - If gitleaks is installed, a leak fails the commit.
+# - If it isn't (e.g. a fresh clone, or the non-technical operator's machine),
+#   we print a notice and allow the commit — CI still runs the full gitleaks
+#   scan, so this hook is an early warning, never a hard gate that blocks work.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact --verbose || {
+    echo "✗ gitleaks found a potential secret in your staged changes — commit blocked."
+    echo "  Remove the secret (and rotate it if it was ever real), then commit again."
+    exit 1
+  }
+else
+  echo "ℹ gitleaks not installed — skipping local secret scan (CI still scans)."
+  echo "  Install for local protection: https://github.com/gitleaks/gitleaks"
+fi
