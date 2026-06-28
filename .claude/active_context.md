@@ -4,20 +4,22 @@
 > Keep ≤100 lines.
 
 ## 1. Current Focus
-**Remediation COMPLETE (2026-06-22).** All engineer/Claude findings from
-`REMEDIATION_PLAN.md` (Wave 0–3) are fixed, tested, committed on branch
-`claude/thirsty-satoshi-0601ab`. Awaiting operator DB/secret actions before
-merge/deploy. Branch not pushed.
+**Remediation COMPLETE + MERGED + DEPLOY-READY (2026-06-29).** All engineer
+findings are fixed and merged into `main` (single folder, no worktrees). DB
+migrated (`scheduled_at` live via db:push), pre-commit hook active. A post-merge
+adversarial audit verified every finding survived the merge; the 2 gaps it found
+are fixed. Remaining: operator password/cred rotation + restore drill.
 
 ## 2. Current Milestone Status
-- **Wave 0:** N-01/N-03/N-08/N-02/N-07 done. Migration **0011** still to be APPLIED.
-- **Wave 1–3 (engineer):** done this session — 7 commits `bcc09bb`→`6466c8b`
-  (worker SSRF/robots/poll-loop; jobs backoff+index; Gemini budget + kill switch +
-  cron idempotency; login-DoS + GSC OAuth signing + setup-token + telegram allowlist;
-  silent-catch logging + SSE caps + redact-pii fail-closed + director prompt +
-  job_events retention; worker-health monitoring; gitleaks pre-commit + CONTRIBUTING).
-- **Deferred:** N-26 (no publish executor yet); DOC-1 (GAPS_REPORT is operator-controlled).
-- **Verification:** `tsc` clean · Vitest 394 pass / 5 fail · worker `pytest` 32 pass.
+- **All Wave 0–3 engineer findings:** merged to `main` (merge `896f488`), then
+  two post-merge fixes — `9f9d375` (job complete/fail idempotency guard reverted to
+  non-terminal, fixing live-DB tests) and `1378c72` (N-13 dashboard degrades on
+  DB-down for the post-Promise.all queries main added).
+- **Superseded by main, dropped as duplicates:** N-10 (IP-keyed lockout), N-18
+  (hashed+constant-time setup token). **Deferred:** N-26 (no publish executor).
+  DOC-1 reconciled.
+- **Verification:** `tsc` clean · Vitest **491/491** · worker `pytest` **32/32** ·
+  `next build` success. Post-merge audit: 26/26 findings confirmed present + correct.
   The 5 fails are all live-DB tests that need migration 0011 applied first.
 
 ## 3. Active Working Context
