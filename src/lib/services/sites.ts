@@ -1,6 +1,6 @@
 import { getDb } from "@/lib/db/client";
 import { sites, type Site } from "@/lib/db/schema";
-import { eq, ne } from "drizzle-orm";
+import { eq, ne, inArray } from "drizzle-orm";
 import type { SiteCreateInput, SiteUpdateInput } from "@/lib/validation/site";
 import { looksLikeKeyConflict } from "./site-errors";
 
@@ -105,4 +105,19 @@ export async function archiveSite(id: number): Promise<Site> {
     .returning();
   if (!row) throw new SiteNotFoundError(id);
   return row;
+}
+
+/**
+ * Bulk archive: set status='archived' for every id in one UPDATE. Unknown ids
+ * are silently ignored (idempotent). Returns the number of rows actually
+ * archived. Empty input is a no-op.
+ */
+export async function archiveSites(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const db = getDb();
+  const rows = await db.update(sites)
+    .set({ status: "archived", updatedAt: new Date() })
+    .where(inArray(sites.id, ids))
+    .returning({ id: sites.id });
+  return rows.length;
 }

@@ -4,7 +4,7 @@ import { sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 import {
-  createSite, getSiteById, getSiteByKey, listSites, updateSite, archiveSite,
+  createSite, getSiteById, getSiteByKey, listSites, updateSite, archiveSite, archiveSites,
   SiteNotFoundError,
 } from "./sites";
 
@@ -92,5 +92,31 @@ describe("sites service", () => {
 
   it("archiveSite throws SiteNotFoundError for a missing id", async () => {
     await expect(archiveSite(999_999_999)).rejects.toBeInstanceOf(SiteNotFoundError);
+  });
+
+  it("archiveSites bulk-archives every id, ignores unknown ones, returns the count", { timeout: 15000 }, async () => {
+    const mk = (name: string) => createSite({
+      key: fixtureKey(), name, domain: "https://bulk.com", locale: "en-US",
+      cmsPlatform: "none", contentPillars: [], bannedPhrases: [], defaultCategories: [],
+    });
+    const a = await mk("Bulk A");
+    const b = await mk("Bulk B");
+
+    const n = await archiveSites([a.id, b.id, 999_999_999]); // unknown id silently ignored
+    expect(n).toBe(2);
+
+    const list = await listSites();
+    expect(list.find((s) => s.id === a.id)).toBeUndefined();
+    expect(list.find((s) => s.id === b.id)).toBeUndefined();
+    const all = await listSites({ includeArchived: true });
+    expect(all.find((s) => s.id === a.id)?.status).toBe("archived");
+    expect(all.find((s) => s.id === b.id)?.status).toBe("archived");
+
+    await db.delete(sites).where(eq(sites.id, a.id));
+    await db.delete(sites).where(eq(sites.id, b.id));
+  });
+
+  it("archiveSites is a no-op (returns 0) for an empty list", async () => {
+    expect(await archiveSites([])).toBe(0);
   });
 });
