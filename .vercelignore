@@ -1,0 +1,5 @@
+# Local tooling / editor junk — never deploy these
+.vs
+.gemini
+graphify-out
+GEMINI.md
