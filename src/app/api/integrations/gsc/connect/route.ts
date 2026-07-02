@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db/client";
-import { kvSettings, sites } from "@/lib/db/schema";
+import { sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 import { buildConsentUrl, buildSignedState, GSC_OAUTH_STATE_COOKIE } from "@/lib/integrations/gsc";
 
 /**
@@ -14,8 +15,7 @@ export async function GET(req: NextRequest) {
   const qSiteId = Number(new URL(req.url).searchParams.get("siteId") ?? "");
   let siteId: number | null = Number.isFinite(qSiteId) && qSiteId > 0 ? qSiteId : null;
   if (!siteId) {
-    const [kv] = await db.select().from(kvSettings).where(eq(kvSettings.key, "ui.activeSiteId")).limit(1);
-    siteId = kv ? (kv.value as { id: number | null }).id : null;
+    siteId = await getActiveSiteId();
   }
   if (!siteId) {
     return NextResponse.redirect(new URL(`/settings?error=${encodeURIComponent("Select a site first")}`, req.url));

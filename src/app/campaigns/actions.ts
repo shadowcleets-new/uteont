@@ -2,16 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createCampaign, createCluster, getCampaign, updateCampaignStatus } from "@/lib/services/campaigns";
-import { listSites } from "@/lib/services/sites";
-import { getKvSetting } from "@/lib/services/app-settings";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 
 async function resolveSiteId(): Promise<number | null> {
-  let siteId = await getKvSetting<number | null>("ui.activeSiteId", null);
-  if (!siteId) {
-    const sites = await listSites().catch(() => []);
-    siteId = sites[0]?.id ?? null;
-  }
-  return siteId;
+  return getActiveSiteId();
 }
 
 export async function createCampaignAction(formData: FormData): Promise<void> {

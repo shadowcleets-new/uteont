@@ -39,6 +39,21 @@ export async function setKvSetting(key: string, value: unknown): Promise<void> {
 }
 // #endregion
 
+// #region Active site (UI/Director source of truth)
+export const ACTIVE_SITE_KEY = "ui.activeSiteId";
+
+/** The UI/Director-selected site, or null if none is selected. Fails soft. */
+export async function getActiveSiteId(): Promise<number | null> {
+  const raw = await getKvSetting<{ id?: unknown } | null>(ACTIVE_SITE_KEY, null);
+  const id = raw && typeof raw === "object" ? (raw as { id?: unknown }).id : null;
+  return typeof id === "number" ? id : null;
+}
+
+export async function setActiveSiteId(id: number | null): Promise<void> {
+  await setKvSetting(ACTIVE_SITE_KEY, { id });
+}
+// #endregion
+
 // #region Critic strictness (LO-60)
 export const CRITIC_STRICTNESS_KEY = "critic.strictness";
 

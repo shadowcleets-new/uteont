@@ -5,6 +5,8 @@ import {
   getPipelineState,
 } from "@/lib/pipeline/snapshot";
 import { derivePipelineState } from "@/lib/pipeline/state";
+import { getActiveSiteId } from "@/lib/services/app-settings";
+import { PickASite } from "@/components/pick-a-site";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +36,13 @@ const EMPTY_SNAPSHOT_STATE = derivePipelineState({
 
 export default async function PipelinePage({ searchParams }: PageProps) {
   const sp = await searchParams;
+  const activeSiteId = await getActiveSiteId();
+  if (!activeSiteId) return <PickASite />;
   // N-12: guard against a non-numeric ?cycleId (Number("abc") = NaN), which
   // would reach the serial-int column and throw an unhandled 500.
   const parsedId = sp.cycleId ? Number(sp.cycleId) : NaN;
   const requestedId = Number.isInteger(parsedId) ? parsedId : null;
-  const cycleId = requestedId ?? (await getMostRecentCycleId());
+  const cycleId = requestedId ?? (await getMostRecentCycleId(activeSiteId));
 
   const state = cycleId ? await getPipelineState(cycleId) : EMPTY_SNAPSHOT_STATE;
 

@@ -3,6 +3,50 @@
 > Structured session journal. Keep the last 15 entries here; archive older
 > ones under `.claude/history/`.
 
+## [2026-07-01 18:05:00] - Session 018ZchjhA68 (deploy unblock + Phase 1 site switcher)
+### 1. Intent, Roles, & Context
+- **The Problem:** (a) Production deploys silently frozen since Jun 21; (b) owner
+  asked why the active goal never progresses; (c) Phase 1 of the autonomy
+  roadmap: make the site switcher truly global (consistent scoping, dashboard
+  placement, Director locked to it).
+- **Specialist Personas Invoked:** Release Engineer (deploy forensics); Systems
+  Analyst (goal-stall diagnosis, 3-subsystem multi-agent audit); Relational DB
+  Architect (ideas.site_id migration); App Router engineer.
+- **The Strategy:** Root-cause first (Hobby cron limit was rejecting every
+  deploy pre-build → zero deployment records); replace the 10-min watchdog with
+  a free GitHub Actions pinger; then spec→plan→TDD the site-switcher phase on a
+  feature branch with owner gates at every prod-DB step.
+
+### 2. Surgical Technical Modifications
+- **Deploy fix (on main, deployed):** `vercel.json` (worker-health cron removed);
+  `.github/workflows/worker-health-ping.yml` (new, 10-min ping w/ CRON_SECRET);
+  `.vercelignore` (new). CRON_SECRET rotated in Vercel (was a reused sk_live key).
+- **Phase 1 branch `feat/site-switcher-global` (`8937a59..a9f4250`):**
+  - `src/lib/services/app-settings.ts`: +ACTIVE_SITE_KEY, getActiveSiteId(),
+    setActiveSiteId() — 9 duplicated resolvers across pages/actions/APIs replaced.
+  - `src/app/{runs,articles,ideas}/page.tsx`, `src/app/pipeline/page.tsx`:
+    site-scoped queries + shared `src/components/pick-a-site.tsx`.
+  - `src/lib/db/schema.ts`: ideas.site_id integer NOT NULL → sites.id + ideas_site_idx.
+  - `src/lib/services/jobs.ts`: persistIdeas(siteId,…) stamps site on insert.
+  - `src/app/api/cron/performance/route.ts`: iterates ALL non-archived sites.
+  - `src/lib/hooks/use-active-site.ts`: router.refresh() on switch;
+    `src/app/page.tsx`: dashboard `<SiteSelector/>`.
+  - `src/app/api/director/message/route.ts` + `src/app/chat/chat-view.tsx`:
+    Director bound to global active site; per-conversation override deleted.
+- **Irreversible Actions:** live Neon — ideas.site_id added + NOT NULL (owner-
+  authorized db:push --force ×2); 6 orphan test ideas DELETED (owner decision).
+
+### 3. Verification & Validation
+- **Execution Commands & Diagnostics:** tsc clean; vitest 497/497 (1 transient
+  live-DB flake passed on rerun); next build exit 0; straggler grep clean;
+  backfill script printed 0 remaining NULLs before tighten.
+- **Resulting App State:** prod (uteont.vercel.app) live on `de10a27`; Phase 1
+  awaiting merge decision. Diagnosis: pipeline has no autonomous dispatcher —
+  drives Phases 2–3.
+- **Next Sprint Phase:** merge/deploy Phase 1; wake Railway worker + GitHub
+  CRON_SECRET; spec Phase 2 (Director goal→plan) & Phase 3 (autonomous driver
+  + Telegram approvals).
+
 ## [2026-06-13 15:45:00] - Session quirky-raman-4a890e (design completion — full)
 ### 1. Intent, Roles, & Context
 - **The Problem:** Complete EVERY remaining item from the 3 parked docs — not

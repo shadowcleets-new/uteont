@@ -236,7 +236,7 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
       if (input.agentKey === "research") {
         await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
       } else if (input.agentKey === "idea-generation") {
-        await persistIdeas(input.cycleId, input.result);
+        await persistIdeas(input.siteId, input.cycleId, input.result);
       } else if (input.agentKey === "content-writing") {
         await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
       } else if (input.agentKey === "tactics-scraper") {
@@ -499,7 +499,9 @@ async function persistResearchKeywords(
   await db.insert(keywords).values(rows);
 }
 
-async function persistIdeas(
+// Exported for tests only — production callers go through applyJobResult.
+export async function persistIdeas(
+  siteId: number,
   cycleId: number | null,
   result: Record<string, unknown>,
 ) {
@@ -524,6 +526,7 @@ async function persistIdeas(
       keywordId = null;
     }
     await db.insert(ideas).values({
+      siteId,
       cycleId: cycleId ?? null,
       keywordId,
       angle: raw.angle.slice(0, 500),

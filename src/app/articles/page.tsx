@@ -1,6 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { articles, type Article } from "@/lib/db/schema";
+import { getActiveSiteId } from "@/lib/services/app-settings";
+import { PickASite } from "@/components/pick-a-site";
 import { fmtAgo } from "@/lib/services/stats";
 import Link from "next/link";
 
@@ -10,10 +12,12 @@ interface PageProps {
   searchParams: Promise<{ status?: string }>;
 }
 
-async function fetchArticles(status?: string): Promise<Article[]> {
+async function fetchArticles(siteId: number, status?: string): Promise<Article[]> {
   try {
     const db = getDb();
-    const where = status ? eq(articles.status, status) : undefined;
+    const where = status
+      ? and(eq(articles.siteId, siteId), eq(articles.status, status))
+      : eq(articles.siteId, siteId);
     return await db.select().from(articles).where(where).orderBy(desc(articles.id)).limit(300);
   } catch {
     return [];
@@ -44,7 +48,9 @@ function ScoreChip({ label, score }: { label: string; score: number | null }) {
 
 export default async function ArticlesPage({ searchParams }: PageProps) {
   const { status } = await searchParams;
-  const rows = await fetchArticles(status);
+  const activeSiteId = await getActiveSiteId();
+  if (!activeSiteId) return <PickASite />;
+  const rows = await fetchArticles(activeSiteId, status);
 
   return (
     <div className="px-9 py-8 max-w-[1200px]">

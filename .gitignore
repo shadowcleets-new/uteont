@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local tooling / editor junk (never commit)
+.gemini/
+.vs/
+GEMINI.md
+graphify-out/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

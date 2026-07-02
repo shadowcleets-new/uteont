@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { and, count, eq, gte } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { articles, kvSettings, runs, sites } from "@/lib/db/schema";
+import { articles, runs, sites } from "@/lib/db/schema";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 import {
   buildRankings,
   buildSeries,
@@ -28,16 +29,6 @@ export const metadata = { title: "Analytics — UTEONT" };
 
 interface PageProps {
   searchParams: Promise<{ range?: string }>;
-}
-
-async function getActiveSiteIdServer(): Promise<number | null> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(kvSettings)
-    .where(eq(kvSettings.key, "ui.activeSiteId"))
-    .limit(1);
-  return row ? (row.value as { id: number | null }).id : null;
 }
 
 async function fetchAnchors(siteId: number) {
@@ -186,7 +177,7 @@ async function loadAnalytics(siteId: number, range: Range): Promise<AnalyticsDat
 export default async function AnalyticsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const range = parseRange(sp.range);
-  const activeSiteId = await getActiveSiteIdServer().catch(() => null);
+  const activeSiteId = await getActiveSiteId().catch(() => null);
 
   if (!activeSiteId) {
     return (

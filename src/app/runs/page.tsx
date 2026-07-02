@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { runs, type Run } from "@/lib/db/schema";
+import { getActiveSiteId } from "@/lib/services/app-settings";
+import { PickASite } from "@/components/pick-a-site";
 import { RunCard } from "@/components/run-card";
 import { critiquesByRunIds } from "@/lib/services/critic";
 
@@ -11,10 +13,12 @@ interface PageProps {
   searchParams: Promise<{ subject?: string }>;
 }
 
-async function fetchRuns(subject?: string): Promise<Run[]> {
+async function fetchRuns(siteId: number, subject?: string): Promise<Run[]> {
   try {
     const db = getDb();
-    const where = subject ? eq(runs.subjectKey, subject) : undefined;
+    const where = subject
+      ? and(eq(runs.siteId, siteId), eq(runs.subjectKey, subject))
+      : eq(runs.siteId, siteId);
     return await db
       .select()
       .from(runs)
@@ -28,7 +32,9 @@ async function fetchRuns(subject?: string): Promise<Run[]> {
 
 export default async function RunsPage({ searchParams }: PageProps) {
   const { subject } = await searchParams;
-  const rows = await fetchRuns(subject);
+  const activeSiteId = await getActiveSiteId();
+  if (!activeSiteId) return <PickASite />;
+  const rows = await fetchRuns(activeSiteId, subject);
   const critiques: Record<number, { verdict: string; recommendation: string | null }> =
     await critiquesByRunIds(rows.map((r) => r.id)).catch(() => ({}));
 

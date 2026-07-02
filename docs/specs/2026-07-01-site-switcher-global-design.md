@@ -54,7 +54,7 @@ Add one server helper `getActiveSiteId(): Promise<number | null>` (in `src/lib/s
 
 1. Add `ideas.site_id integer REFERENCES sites(id)` **nullable**, plus a `bySite` index.
 2. **Backfill** existing rows, in preference order: `run_id → runs.site_id`, else `cycle_id → cycles.site_id`, else `keyword_id → keywords.site_id`.
-3. Verify zero remaining `NULL`s (handle any orphan ideas explicitly — assign to a chosen site or delete; decide at implementation with the row count in hand).
+3. Verify zero remaining `NULL`s. **Owner decision:** orphan ideas (no traceable run/cycle/keyword) are **deleted** — log the count first, then delete, then proceed.
 4. Tighten to `NOT NULL`.
 5. Stamp `site_id` on new ideas at insert time (idea-generation persistence).
 

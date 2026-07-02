@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db/client";
-import { kvSettings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-
-const KEY = "ui.activeSiteId";
+import { getActiveSiteId, setActiveSiteId } from "@/lib/services/app-settings";
 
 export async function GET() {
-  const db = getDb();
-  const [row] = await db.select().from(kvSettings).where(eq(kvSettings.key, KEY)).limit(1);
-  return NextResponse.json({ siteId: row ? (row.value as { id: number | null }).id : null });
+  return NextResponse.json({ siteId: await getActiveSiteId() });
 }
 
 export async function PUT(req: NextRequest) {
@@ -17,11 +11,6 @@ export async function PUT(req: NextRequest) {
   if (siteId !== null && typeof siteId !== "number") {
     return NextResponse.json({ error: "siteId must be number or null" }, { status: 400 });
   }
-  const db = getDb();
-  const value = { id: siteId };
-  await db
-    .insert(kvSettings)
-    .values({ key: KEY, value })
-    .onConflictDoUpdate({ target: kvSettings.key, set: { value, updatedAt: new Date() } });
+  await setActiveSiteId(siteId);
   return NextResponse.json({ siteId });
 }

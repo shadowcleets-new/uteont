@@ -1,25 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db/client";
-import { kvSettings } from "@/lib/db/schema";
 import { startRun, finishRun } from "@/lib/services/runs";
 import { runSiteCrawl } from "@/lib/agent-runners/site-crawl";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 
 const ScanRequest = z.object({
   url: z.string().url(),
   note: z.string().max(500).optional(),
 });
-
-async function getActiveSiteId(): Promise<number | null> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(kvSettings)
-    .where(eq(kvSettings.key, "ui.activeSiteId"))
-    .limit(1);
-  return row ? (row.value as { id: number | null }).id : null;
-}
 
 /**
  * Competitor scan = the real Site Crawl agent pointed at the competitor's

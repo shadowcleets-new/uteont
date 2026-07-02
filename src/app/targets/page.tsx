@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db/client";
-import { kvSettings, sites } from "@/lib/db/schema";
+import { sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 import { listTargetsWithProgress } from "@/lib/services/targets";
 import { captureSnapshots, snapshotsByTarget } from "@/lib/services/target-snapshots";
 import { getInterventionsForTarget, type Intervention } from "@/lib/services/run-interventions";
@@ -9,16 +10,6 @@ import { TargetCreateForm } from "./target-create-form";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Targets — UTEONT" };
-
-async function getActiveSiteIdServer(): Promise<number | null> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(kvSettings)
-    .where(eq(kvSettings.key, "ui.activeSiteId"))
-    .limit(1);
-  return row ? (row.value as { id: number | null }).id : null;
-}
 
 function Header({ siteName }: { siteName?: string }) {
   return (
@@ -41,7 +32,7 @@ function EmptyCard({ text }: { text: string }) {
 }
 
 export default async function TargetsPage() {
-  const activeSiteId = await getActiveSiteIdServer();
+  const activeSiteId = await getActiveSiteId();
 
   if (!activeSiteId) {
     return (

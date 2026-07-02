@@ -1,6 +1,7 @@
 import { AGENTS } from "@/lib/agents/registry";
 import { AgentCard } from "@/components/agent-card";
 import { LiveStatus } from "@/components/live-status";
+import { SiteSelector } from "@/components/site-selector";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import { listTargetsWithProgress } from "@/lib/services/targets";
@@ -11,29 +12,12 @@ import { NextActionCard } from "@/components/next-action-card";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { getDb } from "@/lib/db/client";
-import { kvSettings, sites } from "@/lib/db/schema";
+import { sites } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import type { Run } from "@/lib/db/schema";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 
 export const dynamic = "force-dynamic";
-
-async function getActiveSiteIdServer(): Promise<number | null> {
-  // N-13: degrade on DB error instead of rejecting the whole Promise.all and
-  // white-screening the dashboard (which would also hide the very "DB
-  // unreachable" indicator this page is meant to show).
-  try {
-    const db = getDb();
-    const [row] = await db
-      .select()
-      .from(kvSettings)
-      .where(eq(kvSettings.key, "ui.activeSiteId"))
-      .limit(1);
-    return row ? (row.value as { id: number | null }).id : null;
-  } catch (e) {
-    console.warn("getActiveSiteIdServer failed; defaulting to no active site", e);
-    return null;
-  }
-}
 
 async function getSystemStatus() {
   try {
@@ -50,13 +34,13 @@ export default async function DashboardPage() {
   const [stats, sysStatus, activeSiteId] = await Promise.all([
     getAllAgentStats(),
     getSystemStatus(),
-    getActiveSiteIdServer(),
+    getActiveSiteId(),
   ]);
 
   // Recent runs, filtered by active site when one is selected.
   // N-13: degrade to an empty list if the DB is unreachable, so the dashboard
   // still renders (showing "DATABASE: Unreachable") instead of throwing into
-  // error.tsx — getActiveSiteIdServer/getSystemStatus already degrade, but the
+  // error.tsx — getActiveSiteId/getSystemStatus already degrade, but the
   // calls AFTER the Promise.all must too.
   const recent = await (activeSiteId
     ? listRuns(undefined, 20, { siteId: activeSiteId })
@@ -145,6 +129,10 @@ export default async function DashboardPage() {
         Status of all {AGENTS.length} agents in the pipeline plus shared infrastructure.
         Click any card to jump into that agent.
       </p>
+
+      <div className="mb-8 max-w-sm rounded-[10px] border border-[#e8e6dc] bg-white">
+        <SiteSelector />
+      </div>
 
       {runningCount > 0 && (
         <div className="mb-6">

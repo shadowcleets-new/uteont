@@ -231,12 +231,13 @@ export async function getPipelineState(
  * exist. Used by the pipeline status page when the URL doesn't carry an
  * explicit ?cycleId=.
  */
-export async function getMostRecentCycleId(): Promise<number | null> {
+export async function getMostRecentCycleId(siteId?: number): Promise<number | null> {
   try {
     const db = getDb();
     const [row] = await db
       .select({ id: cycles.id })
       .from(cycles)
+      .where(siteId ? eq(cycles.siteId, siteId) : undefined)
       .orderBy(desc(cycles.id))
       .limit(1);
     return row?.id ?? null;

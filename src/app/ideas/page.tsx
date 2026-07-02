@@ -1,6 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { ideas, type Idea } from "@/lib/db/schema";
+import { getActiveSiteId } from "@/lib/services/app-settings";
+import { PickASite } from "@/components/pick-a-site";
 import { fmtAgo } from "@/lib/services/stats";
 import Link from "next/link";
 
@@ -10,10 +12,12 @@ interface PageProps {
   searchParams: Promise<{ status?: string }>;
 }
 
-async function fetchIdeas(status?: string): Promise<Idea[]> {
+async function fetchIdeas(siteId: number, status?: string): Promise<Idea[]> {
   try {
     const db = getDb();
-    const where = status ? eq(ideas.status, status) : undefined;
+    const where = status
+      ? and(eq(ideas.siteId, siteId), eq(ideas.status, status))
+      : eq(ideas.siteId, siteId);
     return await db.select().from(ideas).where(where).orderBy(desc(ideas.id)).limit(300);
   } catch {
     return [];
@@ -34,7 +38,9 @@ const statusColor = (s: string) =>
 
 export default async function IdeasPage({ searchParams }: PageProps) {
   const { status } = await searchParams;
-  const rows = await fetchIdeas(status);
+  const activeSiteId = await getActiveSiteId();
+  if (!activeSiteId) return <PickASite />;
+  const rows = await fetchIdeas(activeSiteId, status);
 
   return (
     <div className="px-9 py-8 max-w-[1100px]">

@@ -14,11 +14,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createConversation, getConversation, getDirectorContext } from "@/lib/services/conversations";
 import { runDirectorTurn } from "@/lib/services/director";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 
 const BodySchema = z.object({
   conversationId: z.number().int().positive().optional(),
   text: z.string().min(1).max(8000),
-  siteId: z.number().int().positive().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
     : null;
 
   if (!conversation) {
-    const siteId = payload.siteId ?? null;
+    // The Director always operates on the globally-selected site.
+    const siteId = await getActiveSiteId();
     conversation = await createConversation({ surface: "web", siteId });
   }
 

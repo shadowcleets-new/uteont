@@ -232,6 +232,7 @@ export const ideas = pgTable(
       // proposed | approved | rejected | drafting | done
     rejectReason: text("reject_reason"),
     runId:        integer("run_id").references(() => runs.id),
+    siteId:       integer("site_id").notNull().references(() => sites.id),
     createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt:    timestamp("decided_at", { withTimezone: true }),
   },
@@ -239,6 +240,7 @@ export const ideas = pgTable(
     byCycle:   index("ideas_cycle_idx").on(t.cycleId),
     byKeyword: index("ideas_keyword_idx").on(t.keywordId),
     byStatus:  index("ideas_status_idx").on(t.status),
+    bySite:    index("ideas_site_idx").on(t.siteId),
   }),
 );
 

@@ -22,7 +22,7 @@ export function SiteSelector() {
         value={activeSiteId ?? ""}
         onChange={(e) => setActiveSiteId(e.target.value === "" ? null : Number(e.target.value))}
       >
-        <option value="">All sites</option>
+        <option value="">Select a site…</option>
         {sites.map((s) => (
           <option key={s.id} value={s.id}>{s.name} ({s.key})</option>
         ))}

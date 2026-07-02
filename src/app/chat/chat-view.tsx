@@ -29,14 +29,13 @@ const INTENT_BADGE: Record<string, { label: string; color: string }> = {
 };
 
 export function ChatView({ initialConversationId, recent }: ChatViewProps) {
-  const { activeSiteId, sites } = useActiveSite();
+  const { sites } = useActiveSite();
   const [conversationId, setConversationId] = useState<number | null>(
     initialConversationId,
   );
-  // siteId bound to the currently open conversation
+  // siteId bound to the currently open conversation (display only). New
+  // conversations bind to the globally-selected site, resolved server-side.
   const [convSiteId, setConvSiteId] = useState<number | null>(null);
-  // siteId chosen in the dropdown for new conversations
-  const [chosenSiteId, setChosenSiteId] = useState<number | null>(null);
   const [history, setHistory] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -113,16 +112,6 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
     }
   };
 
-  // Sync chosenSiteId with activeSiteId once loaded (only if user hasn't chosen yet)
-  useEffect(() => {
-    if (chosenSiteId === null && activeSiteId !== null) {
-      // One-time default of the dropdown to the active site — a guarded sync,
-      // not the cascading render the rule warns about.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setChosenSiteId(activeSiteId);
-    }
-  }, [activeSiteId, chosenSiteId]);
-
   // Load history when conversationId changes
   useEffect(() => {
     if (!conversationId) {
@@ -187,10 +176,6 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
         conversationId: conversationId ?? undefined,
         text,
       };
-      // Only send siteId when starting a new conversation
-      if (!conversationId && chosenSiteId !== null) {
-        body.siteId = chosenSiteId;
-      }
       const res = await fetch("/api/director/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -382,29 +367,6 @@ export function ChatView({ initialConversationId, recent }: ChatViewProps) {
             {error && (
               <div className="text-[12px] text-[#a33b2b] bg-[#fcf3f1] border border-[#e8c0b8] rounded-md p-2 mb-2">
                 {error}
-              </div>
-            )}
-            {/* Site selector — only shown when starting a new conversation */}
-            {!conversationId && sites.length > 0 && (
-              <div className="mb-2 flex items-center gap-2">
-                <label className="text-[11px] text-[#9a988e]" htmlFor="site-select">
-                  Site
-                </label>
-                <select
-                  id="site-select"
-                  value={chosenSiteId ?? ""}
-                  onChange={(e) =>
-                    setChosenSiteId(e.target.value ? Number(e.target.value) : null)
-                  }
-                  className="rounded border border-[#cfccc1] px-2 py-1 text-[12px] text-[#141413] bg-white focus:outline-none focus:border-[#d97757]"
-                >
-                  <option value="">— none —</option>
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.key}
-                    </option>
-                  ))}
-                </select>
               </div>
             )}
             <ChatInput

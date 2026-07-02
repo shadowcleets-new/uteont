@@ -1,21 +1,12 @@
 import { getDb } from "@/lib/db/client";
-import { kvSettings, sites } from "@/lib/db/schema";
+import { sites } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getActiveSiteId } from "@/lib/services/app-settings";
 import { listExclusions } from "@/lib/services/keyword-exclusions";
 import { ExclusionsPanel } from "@/components/exclusions-panel";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Exclusions — UTEONT" };
-
-async function getActiveSiteIdServer(): Promise<number | null> {
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(kvSettings)
-    .where(eq(kvSettings.key, "ui.activeSiteId"))
-    .limit(1);
-  return row ? (row.value as { id: number | null }).id : null;
-}
 
 function Header({ siteName }: { siteName?: string }) {
   return (
@@ -34,7 +25,7 @@ function Header({ siteName }: { siteName?: string }) {
 }
 
 export default async function ExclusionsPage() {
-  const activeSiteId = await getActiveSiteIdServer().catch(() => null);
+  const activeSiteId = await getActiveSiteId().catch(() => null);
 
   if (!activeSiteId) {
     return (
