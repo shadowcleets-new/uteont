@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getActiveSiteId } from "@/lib/services/app-settings";
 import { PickASite } from "@/components/pick-a-site";
+import { LiveJobs } from "@/components/live-jobs";
 import { getActivePlanForSite, listPlansForSite } from "@/lib/services/plans";
 import { parsePlanSteps, type PlanStep } from "@/lib/services/plan-types";
 import type { Plan } from "@/lib/db/schema";
@@ -126,6 +127,8 @@ export default async function PlanPage() {
         review gates — approve those in{" "}
         <Link href="/approvals" className="underline">Approvals</Link>.
       </p>
+
+      <LiveJobs />
 
       {!current ? (
         <div className="rounded-[10px] border border-[#e8e6dc] bg-white p-8 text-center">

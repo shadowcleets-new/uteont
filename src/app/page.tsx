@@ -2,6 +2,7 @@ import { AGENTS } from "@/lib/agents/registry";
 import { AgentCard } from "@/components/agent-card";
 import { LiveStatus } from "@/components/live-status";
 import { SiteSelector } from "@/components/site-selector";
+import { LiveJobs } from "@/components/live-jobs";
 import { getAllAgentStats, fmtDuration, fmtAgo } from "@/lib/services/stats";
 import { listRuns } from "@/lib/services/runs";
 import { listTargetsWithProgress } from "@/lib/services/targets";
@@ -156,6 +157,8 @@ export default async function DashboardPage() {
       <div className="mb-8 max-w-sm rounded-[10px] border border-[#e8e6dc] bg-white">
         <SiteSelector />
       </div>
+
+      <LiveJobs />
 
       {runningCount > 0 && (
         <div className="mb-6">
