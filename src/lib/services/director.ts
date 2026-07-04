@@ -120,6 +120,20 @@ TOOLS YOU CAN DISPATCH
     Drafts a personalized outreach email (never sends — human review required)
     Use when: link-building campaign needs an email draft
 
+PLANNING (multi-step goals)
+- When the user states a GOAL that needs several agents (e.g. "rank #2 for X in
+  45 days"), your propose MUST include a full ordered "plan": 2-8 steps, each
+  { tool, title, how, args } — title = what the step does, how = one line on the
+  inputs/approach. The plan runs autonomously after ONE user approval, pausing
+  only at review gates (idea_generation, content_writing, outreach outputs).
+- If the goal already names explicit keyword(s), SKIP research — start at
+  idea_generation with args.keywords set to those keyword(s).
+- qa_validation and seo_optimization run automatically inside a plan after
+  drafting; include them as plan steps when quality matters, but NEVER put them
+  in a direct execute batch (they don't run via the worker).
+- Later steps may omit dynamic args (e.g. content_writing inputs) — the plan
+  runner fills them from the approved outputs of earlier steps.
+
 OUTPUT
 Always return JSON with this exact shape, nothing else:
 {
@@ -128,7 +142,8 @@ Always return JSON with this exact shape, nothing else:
   "actions": [
     { "tool": "research" | "idea_generation" | "content_writing" | "qa_validation" | "seo_optimization" | "outreach",
       "args": { ... } }
-  ]
+  ],
+  "plan": { "steps": [ { "tool": "...", "title": "...", "how": "...", "args": { ... } } ] }
 }
 
 - intent="ask": text is the clarifying question. actions: []
@@ -189,15 +204,19 @@ interface DirectorResponse {
   intent: DirectorIntent;
   text: string;
   actions?: DirectorPlannedAction[];
+  /** Phase 2: structured multi-step plan on propose (persisted as a draft). */
+  plan?: { steps?: Array<{ tool: string; title?: string; how?: string; args?: Record<string, unknown> }> };
 }
 
-// Map of tool name → agent key in the existing registry.
+// Map of tool name → agent key for DIRECT execute batches. qa/seo map to ""
+// (skipped): they run inline on Vercel, so enqueuing them as worker jobs would
+// strand them queued forever — inside plans the plan driver runs them inline.
 const TOOL_TO_AGENT: Record<DirectorPlannedAction["tool"], string> = {
   research: "research",
   idea_generation: "idea-generation",
   content_writing: "content-writing",
-  qa_validation: "qa",
-  seo_optimization: "seo-optimization",
+  qa_validation: "",
+  seo_optimization: "",
   outreach: "backlink",
 };
 
@@ -267,6 +286,52 @@ export async function runDirectorTurn(
     content: input.newUserMessage,
     surface: input.surface,
   });
+
+  // 1.5 Phase 2: deterministic plan-approval turn — NO model call. Approving a
+  // drafted plan activates the FROZEN steps; model output is never consulted
+  // post-approval, which closes the injection window an execute re-plan has.
+  if (!input.internal && isApprovalMessage(input.newUserMessage)) {
+    const { getLatestPlanForConversation, activatePlan } = await import("./plans");
+    const draft = await getLatestPlanForConversation(input.conversation.id, "draft").catch(() => null);
+    if (draft) {
+      const { getAutonomyLevel } = await import("./app-settings");
+      const level = await getAutonomyLevel().catch(() => "L2" as const);
+      let text: string;
+      let activatedId: number | null = null;
+      if (level === "L1") {
+        text = "_Autonomy is **L1 (propose-only)** — I can draft plans but not run them. Raise autonomy in Settings, then approve again._";
+      } else {
+        try {
+          const { parsePlanSteps } = await import("./plan-types");
+          const plan = await activatePlan(draft.id);
+          const steps = parsePlanSteps(plan.steps);
+          activatedId = plan.id;
+          text =
+            `Plan approved — running step 1 of ${steps.length}: ${steps[0].title}. ` +
+            `I'll report back here as steps finish and pause at the 🔒 reviews. ` +
+            `Track it on the Plan page.`;
+        } catch (e) {
+          text = `Couldn't activate the plan: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
+      const msg = await appendMessage({
+        conversationId: input.conversation.id,
+        role: "assistant",
+        content: text,
+        payload: { intent: "execute", planId: draft.id },
+        surface: input.surface,
+      });
+      // Dispatch AFTER the "Plan approved" message so cache-hit comebacks
+      // appear below it in the thread.
+      if (activatedId) {
+        const { dispatchStep } = await import("./plan-driver");
+        await dispatchStep(activatedId, 1).catch((e) =>
+          console.warn("director: plan step-1 dispatch failed", e),
+        );
+      }
+      return { message: msg, response: { intent: "execute", text } };
+    }
+  }
 
   // 2. Build transcript for Gemini. `system`-role messages carry raw agent /
   // open-web output (Trends, Reddit, scraped pages) — fence + cap them so the
@@ -378,6 +443,34 @@ export async function runDirectorTurn(
                   ],
                 },
                 args: { type: "object" },
+              },
+            },
+          },
+          plan: {
+            type: "object",
+            properties: {
+              steps: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["tool", "title"],
+                  properties: {
+                    tool: {
+                      type: "string",
+                      enum: [
+                        "research",
+                        "idea_generation",
+                        "content_writing",
+                        "qa_validation",
+                        "seo_optimization",
+                        "outreach",
+                      ],
+                    },
+                    title: { type: "string" },
+                    how: { type: "string" },
+                    args: { type: "object" },
+                  },
+                },
               },
             },
           },
@@ -541,9 +634,54 @@ export async function runDirectorTurn(
         ". Reply “go” to run these too._"
       : "";
 
+  // Phase 2: persist a proposed multi-step plan as a frozen draft and render
+  // the numbered steps from the SAVED row (gating derived server-side — the
+  // model's opinion of what needs review is never trusted).
+  let planNote = "";
+  if (parsed.intent === "propose" && site && parsed.plan?.steps?.length) {
+    try {
+      const { createDraftPlan } = await import("./plans");
+      const { PLAN_TOOL_TO_AGENT, PLAN_TOOLS, PLAN_MAX_STEPS } = await import("./plan-types");
+      const { isGatedAgentKey } = await import("./jobs");
+      const rawSteps = parsed.plan.steps
+        .filter((s) => (PLAN_TOOLS as readonly string[]).includes(s.tool) && s.title)
+        .slice(0, PLAN_MAX_STEPS);
+      if (rawSteps.length > 0) {
+        const steps = rawSteps.map((s, i) => {
+          const tool = s.tool as (typeof PLAN_TOOLS)[number];
+          const agentKey = PLAN_TOOL_TO_AGENT[tool];
+          return {
+            n: i + 1,
+            tool,
+            agentKey,
+            title: String(s.title).slice(0, 200),
+            how: String(s.how ?? "").slice(0, 500),
+            args: s.args ?? {},
+            gated: isGatedAgentKey(agentKey),
+            status: "pending" as const,
+          };
+        });
+        const draftPlan = await createDraftPlan({
+          siteId: site.id,
+          conversationId: input.conversation.id,
+          goal: input.conversation.goal ?? input.newUserMessage,
+          steps,
+        });
+        planNote =
+          `\n\n**Plan #${draftPlan.id}** (🔒 = pauses for your review)\n` +
+          steps
+            .map((s) => `${s.n}. ${s.gated ? "🔒 " : ""}${s.title}${s.how ? ` — ${s.how}` : ""}`)
+            .join("\n") +
+          `\n\n_Reply “go” to run this plan — it executes on its own and only stops at the 🔒 gates._`;
+      }
+    } catch (e) {
+      console.warn("director: draft plan persistence failed", e);
+    }
+  }
+
   const assistantText = downgradedForApproval
     ? `${parsed.text}\n\n${downgradeHint}`
-    : `${parsed.text}${blockedNote}`;
+    : `${parsed.text}${blockedNote}${planNote}`;
 
   // 5. Persist the assistant message
   const assistantPayload: AppendMessageInput["payload"] = {

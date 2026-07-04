@@ -24,6 +24,9 @@ export default function Error({
         >
           Try again
         </button>
+        {/* Deliberate <a> (not <Link>): a full-page load escapes a broken React
+            tree, which client-side navigation could re-render right back into. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
           href="/"
           className="rounded-md border border-[#e3e1da] px-4 py-2 text-sm font-medium text-[#141413] hover:bg-[#f0eee8]"

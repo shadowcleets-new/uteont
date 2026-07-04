@@ -55,6 +55,29 @@ export default async function DashboardPage() {
   const activeTargets = allTargets.filter((t) => t.status === "active").slice(0, 5);
   const nextAction = pickNextAction(allTargets);
 
+  // Phase 2: surface the in-flight Director plan (step N of M) when one exists.
+  let activePlanLine: { id: number; text: string } | null = null;
+  if (activeSiteId) {
+    try {
+      const { getActivePlanForSite } = await import("@/lib/services/plans");
+      const { parsePlanSteps } = await import("@/lib/services/plan-types");
+      const p = await getActivePlanForSite(activeSiteId);
+      if (p) {
+        const steps = parsePlanSteps(p.steps);
+        const cur = steps.find((s) => s.n === p.currentStep) ?? steps[0];
+        activePlanLine = {
+          id: p.id,
+          text:
+            p.status === "paused-gate"
+              ? `Active plan: step ${cur.n} of ${steps.length} is waiting for your review — ${cur.title}`
+              : `Active plan: running step ${cur.n} of ${steps.length} — ${cur.title}`,
+        };
+      }
+    } catch (e) {
+      console.warn("dashboard: active plan lookup failed", e);
+    }
+  }
+
   // Accrue trajectory history from dashboard loads too (debounced, never throws).
   if (allTargets.length > 0) {
     await captureSnapshots(allTargets.map((t) => ({ id: t.id, value: t.current })));
@@ -166,6 +189,17 @@ export default async function DashboardPage() {
         )}
         <span className="text-[#9a988e]">{attention.done} done recently</span>
       </div>
+
+      {activePlanLine && (
+        <div className="mb-6">
+          <Link
+            href="/plan"
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-medium bg-[#eef2e9] text-[#4a6b2f] hover:bg-[#e2ead9] transition-colors"
+          >
+            ▶ {activePlanLine.text}
+          </Link>
+        </div>
+      )}
 
       {nextAction && (
         <div className="mb-8">

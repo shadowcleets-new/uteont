@@ -3,6 +3,33 @@
 > Structured session journal. Keep the last 15 entries here; archive older
 > ones under `.claude/history/`.
 
+## [2026-07-04 13:05:00] - Session 018ZchjhA68 (Phase 2 goal plans + CI red fix)
+### 1. Intent, Roles, & Context
+- **The Problem:** (a) Phase 2 — Director turns a goal into a frozen numbered
+  plan; one approval; autonomous execution pausing only at content gates with
+  auto-resume; (b) owner flooded with per-push build-failure emails.
+- **Specialist Personas Invoked:** Agent-platform architect; Release engineer
+  (CI forensics); App Router engineer.
+- **The Strategy:** plans table (JSONB frozen steps) + event-driven plan-driver
+  hooked into applyJobResult/failJob/decideCheckpoint; deterministic no-model
+  approval turn (injection-window closed). CI red = 2 pre-existing lint ERRORS
+  failing `verify` on every push (+ husky prepare killing non-git builds).
+### 2. Surgical Technical Modifications
+- **Phase 2 (branch feat/director-goal-plans):** schema.ts plans table (pushed
+  live, additive); plan-types.ts (zod PlanStep); plans.ts (lifecycle);
+  plan-driver.ts (dispatch/advance/gate-resume/retry; content fan-out cap 5;
+  qa/seo inline); hooks in jobs.ts (+isGatedAgentKey, persistIdeas runId),
+  checkpoints.ts; director.ts (PLANNING prompt, plan schema, draft persistence,
+  deterministic approval, qa/seo direct-dispatch bug fixed); /plan page +
+  sidebar + dashboard step-N-of-M line.
+- **Fixes:** package.json prepare no-ops outside git; worker-health prefer-const;
+  error.tsx deliberate <a> (rule disabled with reason).
+### 3. Verification & Validation
+- tsc clean · lint 0 errors · vitest 501/501 · build exit 0. Driver lifecycle
+  proven by live-DB test (advance→gate→approve-resume→complete; reject cancels).
+- **Next Sprint Phase:** merge+deploy; Railway service audit (needs
+  `railway login`); Phase 3 (Telegram gate pings with step N/M context).
+
 ## [2026-07-01 18:05:00] - Session 018ZchjhA68 (deploy unblock + Phase 1 site switcher)
 ### 1. Intent, Roles, & Context
 - **The Problem:** (a) Production deploys silently frozen since Jun 21; (b) owner

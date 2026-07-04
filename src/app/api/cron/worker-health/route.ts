@@ -31,7 +31,7 @@ export async function GET() {
   let stale = false;
   let reason = "";
   let lastPollAt: string | null = null;
-  let mode: "http" | "db" = healthUrl ? "http" : "db";
+  const mode: "http" | "db" = healthUrl ? "http" : "db";
 
   if (healthUrl) {
     // --- Primary: probe the worker's /health endpoint directly. ---

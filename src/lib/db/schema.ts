@@ -735,6 +735,32 @@ export const keywordClusters = pgTable(
   }),
 );
 
+// Phase 2: a Director goal plan — the frozen, owner-approved step sequence the
+// plan driver executes autonomously between approval gates. Steps live as JSONB
+// (PlanStep[] — validated by zod in plan-types.ts); updates are strictly
+// sequential through the plan driver, so no separate steps table is needed.
+export const plans = pgTable(
+  "plans",
+  {
+    id:             serial("id").primaryKey(),
+    siteId:         integer("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+    conversationId: integer("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    goal:           text("goal").notNull(),
+    status:         text("status").notNull().default("draft"),
+      // draft | active | paused-gate | completed | failed | cancelled
+    currentStep:    integer("current_step").notNull().default(0), // 1-based; 0 = not started
+    steps:          jsonb("steps").notNull().default([]),
+    approvedAt:     timestamp("approved_at", { withTimezone: true }),
+    createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySite:         index("plans_site_idx").on(t.siteId),
+    byConversation: index("plans_conversation_idx").on(t.conversationId),
+    byStatus:       index("plans_status_idx").on(t.status),
+  }),
+);
+
 export type Message = typeof messages.$inferSelect;
 export type ResultCache = typeof resultCache.$inferSelect;
 export type Target = typeof targets.$inferSelect;
@@ -748,3 +774,4 @@ export type KeywordCluster = typeof keywordClusters.$inferSelect;
 export type MetricTimeseries = typeof metricsTimeseries.$inferSelect;
 export type JobEvent = typeof jobEvents.$inferSelect;
 export type PublishReceipt = typeof publishReceipts.$inferSelect;
+export type Plan = typeof plans.$inferSelect;

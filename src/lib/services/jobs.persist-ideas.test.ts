@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { getDb } from "@/lib/db/client";
-import { ideas, sites } from "@/lib/db/schema";
+import { ideas, runs, sites } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { createSite } from "./sites";
+import { startRun } from "./runs";
 import { persistIdeas } from "./jobs";
 
 describe("persistIdeas stamps siteId", () => {
@@ -12,8 +13,14 @@ describe("persistIdeas stamps siteId", () => {
       name: "PersistIdeas T", domain: "https://t.com", locale: "en-US",
       cmsPlatform: "none", contentPillars: [], bannedPhrases: [], defaultCategories: [],
     });
+    let runId: number | null = null;
     try {
-      await persistIdeas(site.id, null, {
+      const run = await startRun({
+        subjectKey: "agent.idea-generation", category: "agent",
+        action: "test", siteId: site.id,
+      });
+      runId = run.id;
+      await persistIdeas(site.id, null, run.id, {
         ideas: [{ keyword: "k-test", angle: "an angle", brief: "a brief" }],
       });
       const [row] = await getDb()
@@ -22,8 +29,10 @@ describe("persistIdeas stamps siteId", () => {
         .orderBy(desc(ideas.id)).limit(1);
       expect(row?.siteId).toBe(site.id);
       expect(row?.angle).toBe("an angle");
+      expect(row?.runId).toBe(run.id);
     } finally {
       await getDb().delete(ideas).where(eq(ideas.siteId, site.id));
+      if (runId) await getDb().delete(runs).where(eq(runs.id, runId));
       await getDb().delete(sites).where(eq(sites.id, site.id));
     }
   });

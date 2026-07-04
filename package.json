@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prepare": "git config core.hooksPath .husky",
+    "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .husky',{stdio:'ignore'})}catch(e){}\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

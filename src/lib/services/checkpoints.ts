@@ -152,6 +152,19 @@ export async function decideCheckpoint(
       `Checkpoint ${verb.toUpperCase()}: "${cp.title}"${opts.note ? ` — ${opts.note}` : ""}`,
     ).catch(() => {});
   }
+
+  // Plan driver (Phase 2): a decision on a plan-gated checkpoint resumes (or
+  // cancels) the plan. Best-effort — must never break the decision itself.
+  // Note: undoing this decision does NOT claw back an already-dispatched step.
+  const cpPayload = cp.payload as Record<string, unknown> | null;
+  if (cpPayload && typeof cpPayload.planId === "number") {
+    try {
+      const { onCheckpointDecision } = await import("./plan-driver");
+      await onCheckpointDecision(row, verb);
+    } catch (e) {
+      console.warn("decideCheckpoint: plan-driver hook failed", e);
+    }
+  }
   return row;
 }
 

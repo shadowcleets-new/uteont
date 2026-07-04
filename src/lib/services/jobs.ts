@@ -180,6 +180,9 @@ export interface ApplyJobResultInput {
 // Gated agent outputs that should land in the human approval inbox (/approvals).
 // gate codes match the checkpoint state machine (A=idea selection, B=draft
 // review, C=outreach send).
+/** Whether this agent's output pauses at a human approval gate (Phase 2 plans). */
+export const isGatedAgentKey = (agentKey: string): boolean => agentKey in CHECKPOINT_GATES;
+
 const CHECKPOINT_GATES: Record<string, { gate: string; blastRadius: number }> = {
   "idea-generation": { gate: "A", blastRadius: 0 },
   "content-writing": { gate: "B", blastRadius: 1 },
@@ -236,7 +239,7 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
       if (input.agentKey === "research") {
         await persistResearchKeywords(input.siteId, input.cycleId, run.id, input.result);
       } else if (input.agentKey === "idea-generation") {
-        await persistIdeas(input.siteId, input.cycleId, input.result);
+        await persistIdeas(input.siteId, input.cycleId, run.id, input.result);
       } else if (input.agentKey === "content-writing") {
         await persistArticle(input.siteId, input.cycleId, input.payload, input.result);
       } else if (input.agentKey === "tactics-scraper") {
@@ -252,19 +255,27 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
   // 2.5 Enqueue an approval checkpoint for gated outputs so finished work that
   //     needs sign-off reaches the /approvals inbox. Real jobs only — a cached
   //     replay (jobId null) would re-enqueue an already-decided item.
+  let planCheckpointId: number | null = null;
+  const { planContextFromPayload } = await import("./plan-driver");
+  const planCtx = planContextFromPayload(input.payload);
   if (input.jobId != null) {
     const gateCfg = CHECKPOINT_GATES[input.agentKey];
     if (gateCfg) {
       try {
         const { createCheckpoint } = await import("./checkpoints");
-        await createCheckpoint({
+        const cp = await createCheckpoint({
           siteId: input.siteId,
           gate: gateCfg.gate,
           title: checkpointTitle(input.agentKey, input.payload, input.result),
           summary: checkpointSummary(input.agentKey),
-          payload: { agentKey: input.agentKey, jobId: input.jobId, runId: run.id, result: input.result },
+          payload: {
+            agentKey: input.agentKey, jobId: input.jobId, runId: run.id, result: input.result,
+            // Plan gates: the checkpoint decision resumes the plan (plan-driver).
+            ...(planCtx ? { planId: planCtx.planId, stepN: planCtx.stepN } : {}),
+          },
           blastRadius: gateCfg.blastRadius,
         });
+        planCheckpointId = cp?.id ?? null;
       } catch (e) {
         console.warn("applyJobResult: createCheckpoint failed", e);
       }
@@ -316,6 +327,21 @@ export async function applyJobResult(input: ApplyJobResultInput): Promise<{ runI
       }
     } catch (e) {
       console.warn("applyJobResult: director-conversation update failed", e);
+    }
+  }
+
+  // 5. Plan driver (Phase 2): record this result against its plan step and
+  //    advance/pause the plan. Best-effort — must never break job completion.
+  if (planCtx) {
+    try {
+      const { onJobResult } = await import("./plan-driver");
+      await onJobResult(planCtx, {
+        jobId: input.jobId ?? null,
+        runId: run.id,
+        checkpointId: planCheckpointId,
+      });
+    } catch (e) {
+      console.warn("applyJobResult: plan-driver onJobResult failed", e);
     }
   }
 
@@ -503,6 +529,7 @@ async function persistResearchKeywords(
 export async function persistIdeas(
   siteId: number,
   cycleId: number | null,
+  runId: number | null,
   result: Record<string, unknown>,
 ) {
   const arr = result.ideas;
@@ -528,6 +555,7 @@ export async function persistIdeas(
     await db.insert(ideas).values({
       siteId,
       cycleId: cycleId ?? null,
+      runId: runId ?? null,
       keywordId,
       angle: raw.angle.slice(0, 500),
       brief: raw.brief ?? "",
@@ -642,6 +670,14 @@ export async function failJob(jobId: number, error: string, retry: boolean) {
       }
     } catch (e) {
       console.warn("failJob: director-conversation update failed", e);
+    }
+    // Plan driver (Phase 2): a terminal failure pauses the plan for a retry.
+    try {
+      const { planContextFromPayload, onJobFailedTerminal } = await import("./plan-driver");
+      const planCtx = planContextFromPayload(row.payload as Record<string, unknown> | null);
+      if (planCtx) await onJobFailedTerminal(planCtx, error);
+    } catch (e) {
+      console.warn("failJob: plan-driver onJobFailedTerminal failed", e);
     }
   }
 }
