@@ -133,6 +133,8 @@ PLANNING (multi-step goals)
   in a direct execute batch (they don't run via the worker).
 - Later steps may omit dynamic args (e.g. content_writing inputs) — the plan
   runner fills them from the approved outputs of earlier steps.
+- When you include a plan, keep "text" to 2-3 short sentences (strategy only).
+  Do NOT restate the steps in prose — the plan itself is rendered separately.
 
 OUTPUT
 Always return JSON with this exact shape, nothing else:
@@ -417,7 +419,9 @@ export async function runDirectorTurn(
       traceId,
       ...(cachedContent ? { cachedContent } : { systemInstruction: sysPrompt }),
       temperature: 0.4,
-      maxOutputTokens: 4096,
+      // 8192: a propose-with-plan response (text + up to 8 structured steps)
+      // overflowed 4096 and truncated the JSON mid-stream.
+      maxOutputTokens: 8192,
       thinkingBudget: 0, // structured intent call — no reasoning budget, so JSON isn't truncated
       responseSchema: {
         type: "object",
