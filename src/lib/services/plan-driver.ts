@@ -35,9 +35,11 @@ export function planContextFromPayload(
 
 // --- chat comebacks ---------------------------------------------------------
 
-/** Post a Director-voiced progress message into the plan's conversation. */
+/** Post a Director-voiced progress message into the plan's conversation, and
+ *  mirror it to Telegram (Phase 3) so the owner can supervise from their phone.
+ *  Both sinks are best-effort — a notification failure never blocks the plan. */
 async function postPlanMessage(
-  plan: { id: number; conversationId: number },
+  plan: { id: number; conversationId: number; goal?: string },
   content: string,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
@@ -50,6 +52,13 @@ async function postPlanMessage(
     });
   } catch (e) {
     console.warn("plan-driver: postPlanMessage failed", e);
+  }
+  try {
+    const { sendMessage } = await import("./telegram");
+    const goal = plan.goal ? ` — ${plan.goal.slice(0, 60)}` : "";
+    await sendMessage({ text: `📋 Plan #${plan.id}${goal}\n${content}` });
+  } catch (e) {
+    console.warn("plan-driver: telegram mirror failed", e);
   }
 }
 
